@@ -1,0 +1,25 @@
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.core.config import settings
+from app.core.security import AuthenticatedUser, get_current_user
+
+app = FastAPI(title="CyntraAI API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "environment": settings.environment}
+
+
+@app.get("/health/authenticated")
+async def health_authenticated(user: AuthenticatedUser = Depends(get_current_user)):
+    return {"status": "ok", "user_id": user.user_id, "email": user.email}
