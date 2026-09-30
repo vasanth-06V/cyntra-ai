@@ -168,4 +168,13 @@ Entries are appended in chronological order, oldest first. Nothing is edited or 
 
 ---
 
-*(Next entry: continuing Phase 1 once Supabase service role key / JWT secret and Google OAuth credentials are provided -- and once the ESLint run started in this session finishes.)*
+**ESLint follow-up**: the background ESLint run from step 15 came back with 1 error and 3 warnings, all fixed before committing:
+- `components/ui/ThemeToggle.tsx` had a hard error ("Calling setState synchronously within an effect can trigger cascading renders") on the standard `useEffect(() => setMounted(true), [])` hydration-guard pattern -- the project's `eslint-plugin-react-hooks` version flags this as an anti-pattern even though it's the common `next-themes` idiom. Replaced it with `useSyncExternalStore` (server snapshot `false`, client snapshot `true`), which is the React-recommended primitive for exactly this "has this mounted on the client yet" check and doesn't trigger the rule.
+- Three files (`sign-in/page.tsx`, `AccountSetupForm.tsx`, `SignOutButton.tsx`) used `window.location.href` for internal navigation, flagged by `@next/next/no-location-assign-relative-destination`. Replaced all three with `useRouter().push()` + `router.refresh()` (the refresh ensures the Server Component dashboard layout re-runs `requireUser()` against the now-current session instead of serving a stale redirect).
+- Re-ran both `npx tsc --noEmit` (clean) and `npx eslint .` (clean, exit code 0) after the fixes, then re-verified the sign-in page and theme toggle live in the browser again (both themes, no console errors) before committing.
+
+Committed as `849af98`.
+
+---
+
+*(Next entry: continuing Phase 1/starting Phase 2 once Supabase service role key / JWT secret and Google OAuth credentials are provided.)*
