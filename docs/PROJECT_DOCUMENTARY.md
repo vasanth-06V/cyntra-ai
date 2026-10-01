@@ -204,4 +204,8 @@ Committed as `849af98`.
 
 ---
 
+Committed as `5020b79`.
+
+---
+
 *(Next entry: live end-to-end testing once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided.)*
