@@ -42,9 +42,42 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/**
+ * Streams a POST response chunk-by-chunk as plain text (used for chat
+ * replies). Yields each decoded chunk as it arrives, rather than waiting
+ * for the full response like `apiClient.post`.
+ */
+async function* streamPost(path: string, body?: unknown): AsyncGenerator<string> {
+  const headers = {
+    ...(await authHeader()),
+    "Content-Type": "application/json",
+  };
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new ApiError(res.status, text || res.statusText);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    yield decoder.decode(value, { stream: true });
+  }
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  streamPost,
 };

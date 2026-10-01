@@ -94,7 +94,10 @@ async def delete_key(user_id: str, key_id: str) -> None:
     await asyncio.to_thread(_delete)
 
 
-async def _get_key_row(user_id: str, provider: str, slot: str) -> dict | None:
+async def get_key_row(user_id: str, provider: str, slot: str) -> dict | None:
+    """Public, cross-module lookup -- used directly by streaming consumers
+    (chat/interview services) that need primary/backup key access but can't
+    use call_with_failover's one-shot-call shape. See its docstring."""
     supabase = get_supabase()
 
     def _query():
@@ -112,7 +115,8 @@ async def _get_key_row(user_id: str, provider: str, slot: str) -> dict | None:
     return result.data if result else None
 
 
-async def _notify(user_id: str, message: str) -> None:
+async def notify_user(user_id: str, message: str) -> None:
+    """Public, cross-module notification helper -- see get_key_row."""
     supabase = get_supabase()
 
     def _insert():
@@ -136,16 +140,16 @@ async def call_with_failover(
     Streaming chat failover (switching keys mid-stream) is a different
     problem -- partially-yielded output can't simply be "retried" -- and is
     handled directly in the chat/interview services that consume streaming
-    responses, reusing _get_key_row via this module.
+    responses, reusing get_key_row/notify_user from this module directly.
     """
-    primary = await _get_key_row(user_id, provider, "primary")
+    primary = await get_key_row(user_id, provider, "primary")
     if not primary:
         raise BothKeysFailedError(f"No {provider} key configured")
 
     try:
         return await fn(decrypt_key(primary["encrypted_key"]))
     except ProviderRateLimitError:
-        backup = await _get_key_row(user_id, provider, "backup")
+        backup = await get_key_row(user_id, provider, "backup")
         if not backup:
             raise BothKeysFailedError(
                 f"Primary {provider} key is rate-limited and no backup key is configured"
@@ -158,7 +162,7 @@ async def call_with_failover(
                 f"Both primary and backup {provider} keys are rate-limited"
             ) from exc
 
-        await _notify(
+        await notify_user(
             user_id,
             f"Your primary {provider} key hit its rate limit -- "
             f"switched to your backup key.",

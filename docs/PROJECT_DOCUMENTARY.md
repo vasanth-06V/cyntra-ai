@@ -238,4 +238,33 @@ This confirms two things: the sign-up code itself is wired correctly end-to-end 
 
 ---
 
-*(Next entry: live end-to-end testing once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided -- and once email confirmation is either disabled or the rate limit resets, to complete a full demo signup test.)*
+### [2026-10-01] Theme toggle redesign
+
+**Action**: Per user request, replaced the sliding pill/track theme toggle with a simple circular icon button (no track), using hand-drawn SVG sun/moon glyphs (no emoji) and a rotate/fade crossfade transition on click, after confirming via a clarifying question that "different control type" (not just different icons, or repositioning) was wanted.
+
+**Why**: Direct user request.
+
+**Result**: `npx tsc --noEmit` and `npx eslint .` clean. Verified live in the browser: renders as a clean circular button, click correctly crossfades between sun/moon and switches the whole page's theme, hover state shows the accent background. Committed as `0751659`.
+
+---
+
+### [2026-10-01] Phase 3 -- AI Chatbot service
+
+**Action**:
+1. Added the `conversations` + `chat_messages` tables (migration, applied to the live Supabase project and saved locally as `0012_chat.sql`) -- `chat_messages` deliberately named (not just `messages`) to stay unambiguous as more tables get added later. RLS: conversation ownership gates both tables (messages scoped via a join to their parent conversation, same pattern as `interview_transcripts`). Security and performance advisors both clean immediately after applying.
+2. While wiring the new `chat/service.py`, noticed it needed to import `_get_key_row`/`_notify` from `keys/service.py` -- both underscore-prefixed "private" helpers. Rather than reach across a module boundary for private names, renamed them to public `get_key_row`/`notify_user` in `keys/service.py` (its own docstring had already anticipated this exact cross-module reuse) and updated `call_with_failover` and `tests/test_keys.py` to match. All 5 existing key tests still passed after the rename.
+3. Built `chat/service.py`: `create_conversation`, `list_conversations`, `list_messages` (with an ownership check via `_require_owned_conversation`), and `stream_reply` -- the streaming failover generator described in Section 7's design-time limitation: tries the primary key, and only retries with the backup key if the rate-limit error occurs *before any chunk has been yielded* (once output has started, a partial response can't be safely discarded and retried); notifies the user on a successful fallback, same as the one-shot `call_with_failover` path. Raises a 412 if no key is configured at all, 429 if rate-limited with no backup available.
+4. Built `chat/router.py`: `POST/GET /chat/conversations`, `GET /chat/conversations/{id}/messages`, and `POST /chat/conversations/{id}/messages` returning a `StreamingResponse` (plain chunked text) wrapping `stream_reply`. Wired into `main.py`.
+5. Wrote `tests/test_chat.py`: 4 tests using a `FakeAdapter` test double (an async generator yielding canned chunks, configurable to raise `ProviderRateLimitError` before any chunk) -- covers the full-success path, the before-any-chunk failover path (and that the notification fires), the no-key-at-all 412, and the rate-limited-with-no-backup 429. All passed, run alongside the existing 5 key tests (9/9 total).
+6. Frontend: `types/chat.ts`; added `apiClient.streamPost` to `lib/api-client/fastapi.ts` (reads the fetch response body via `getReader()`/`TextDecoder`, yielding decoded chunks -- chosen over `EventSource`/SSE specifically because `EventSource` can't send the `Authorization` header this app's auth model requires); `components/chat/MessageBubble.tsx` and `ChatWindow.tsx` (provider selector restricted to providers with a valid key, optimistic local message append, live-appends streamed chunks to the in-progress assistant bubble); `chat/ChatListView.tsx` (conversation list + "New chat") and `chat/[conversationId]/ChatThreadView.tsx` (fetches message history + valid-provider list, renders `ChatWindow`) -- both following the page.tsx-is-a-thin-wrapper convention from the earlier file-naming cleanup. The dynamic route's `page.tsx` is a small async Server Component that awaits the `params` promise (confirmed via the bundled Next.js 16 docs that `params` is always a promise now, must be awaited or read via `use()`) and passes the resolved id down as a prop -- the same "legitimate routing-boundary logic" exception as `account-setup`/`onboarding`.
+7. Verified: `npx tsc --noEmit` and `npx eslint .` both clean. FastAPI app imports with all `/chat/*` routes registered. Booted the FastAPI server for real (even without live Supabase credentials) and confirmed with `curl` that `/health` returns 200, a request to `/chat/conversations` with no token returns a clean 401 "Missing bearer token", and with a bogus token returns a clean 401 "Invalid or expired token" -- proving the auth dependency itself works correctly independent of the still-missing Supabase service role key/JWT secret. Booted the frontend dev server and confirmed `/chat` and `/chat/<id>` both correctly redirect an unauthenticated visitor to `/sign-in` with no console errors.
+
+**Why**: Continuing the agreed build order (`docs/IMPLEMENTATION.md` Phase 3) -- the Chatbot service is deliberately first among the three products specifically to validate the provider-adapter/key-failover plumbing end-to-end before the harder two services (Interviewing Agent, ATS Score) are built on top of it.
+
+**Result**: The full chat backend (conversations, streaming replies, failover) and frontend (list + thread UI, streaming render) are built and unit-tested. What remains unverified is the actual live round-trip -- a real signed-in user picking a real provider and getting a real streamed reply -- which needs both the Supabase service role key/JWT secret (to run the backend against real auth) and a real BYOK provider key. Per Phase 3's definition of done, this is the next thing to confirm once those are available.
+
+**Problems faced**: None blocking. The one real design decision was recognizing the underscore-prefixed `keys/service.py` helpers needed to become a proper public cross-module API rather than being imported by their "private" names from `chat/service.py` -- fixed immediately, before it became a pattern repeated into future phases.
+
+---
+
+*(Next entry: live end-to-end testing of the full signup -> onboarding -> chat round-trip once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided.)*

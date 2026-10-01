@@ -1,1 +1,1 @@
-export { ChatView as default } from "./ChatView";
+export { ChatListView as default } from "./ChatListView";

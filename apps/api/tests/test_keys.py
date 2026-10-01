@@ -21,7 +21,7 @@ async def test_succeeds_on_primary_key(monkeypatch):
     async def fake_get_key_row(user_id, provider, slot):
         return _key_row("primary-key") if slot == "primary" else None
 
-    monkeypatch.setattr(service, "_get_key_row", fake_get_key_row)
+    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
 
     async def fn(api_key: str) -> str:
         assert api_key == "primary-key"
@@ -38,12 +38,12 @@ async def test_fails_over_to_backup_on_rate_limit_and_notifies(monkeypatch):
 
     notified = {}
 
-    async def fake_notify(user_id, message):
+    async def fake_notify_user(user_id, message):
         notified["user_id"] = user_id
         notified["message"] = message
 
-    monkeypatch.setattr(service, "_get_key_row", fake_get_key_row)
-    monkeypatch.setattr(service, "_notify", fake_notify)
+    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
+    monkeypatch.setattr(service, "notify_user", fake_notify_user)
 
     calls = []
 
@@ -66,7 +66,7 @@ async def test_raises_when_primary_rate_limited_and_no_backup_configured(monkeyp
     async def fake_get_key_row(user_id, provider, slot):
         return _key_row("primary-key") if slot == "primary" else None
 
-    monkeypatch.setattr(service, "_get_key_row", fake_get_key_row)
+    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
 
     async def fn(api_key: str) -> str:
         raise ProviderRateLimitError("rate limited")
@@ -80,11 +80,11 @@ async def test_raises_when_both_keys_rate_limited(monkeypatch):
     async def fake_get_key_row(user_id, provider, slot):
         return _key_row(f"{slot}-key")
 
-    async def fake_notify(user_id, message):
+    async def fake_notify_user(user_id, message):
         pytest.fail("should not notify when both keys fail")
 
-    monkeypatch.setattr(service, "_get_key_row", fake_get_key_row)
-    monkeypatch.setattr(service, "_notify", fake_notify)
+    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
+    monkeypatch.setattr(service, "notify_user", fake_notify_user)
 
     async def fn(api_key: str) -> str:
         raise ProviderRateLimitError("rate limited")
@@ -98,7 +98,7 @@ async def test_raises_when_no_primary_key_configured(monkeypatch):
     async def fake_get_key_row(user_id, provider, slot):
         return None
 
-    monkeypatch.setattr(service, "_get_key_row", fake_get_key_row)
+    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
 
     async def fn(api_key: str) -> str:
         pytest.fail("fn should never be called when no primary key exists")
