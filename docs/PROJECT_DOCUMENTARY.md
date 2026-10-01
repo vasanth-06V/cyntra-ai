@@ -226,4 +226,16 @@ This confirms two things: the sign-up code itself is wired correctly end-to-end 
 
 ---
 
+### [2026-10-01] File-naming cleanup -- every route now page.tsx + a named view component
+
+**Action**: The user flagged (referencing an earlier stated preference) that routes shouldn't just be generically-named `page.tsx` files. Clarified first that Next.js App Router hard-requires the literal filename `page.tsx`/`layout.tsx` for its file-based routing to find a route at all -- that part can't change. What *can* change is keeping that file as a one-line re-export and putting all actual content in a clearly-named sibling component. Confirmed the approach with the user (apply it everywhere, including the simple stubs, not just pages with real logic), then refactored all 13 routes that had inline content: `sign-in` -> `SignInView.tsx`, `sign-up` -> `DemoSignUpView.tsx`, the `(dashboard)` layout -> `DashboardShell.tsx`, and each dashboard page (`dashboard`, `chat`, `interviews`, `interviews/setup`, `ats-score`, `resumes`, `reports`, `settings/api-keys`, `settings/team`, `admin/question-bank`) -> its own `XView.tsx`. `account-setup` and `onboarding` were left untouched since they already followed the right shape (a clearly-named async function doing real redirect/data-fetch work, delegating UI to a named component) -- not every `page.tsx` needs to be a trivial re-export, only ones that were acting as an unnamed dumping ground for view logic. Root `app/layout.tsx` and `app/page.tsx` were also left as-is: minimal framework bootstrap (fonts, metadata, a bare auth-redirect) with no "view" content worth extracting.
+
+**Why**: Direct user request, tracing back to an original stated preference for a decent, clearly-named folder/file structure rather than a pile of ambiguous `page.tsx` files.
+
+**Result**: `npx tsc --noEmit` and `npx eslint .` both clean. Booted the dev server and confirmed `/` still redirects correctly, `/sign-in` renders pixel-identical to before the refactor, `/sign-up` loads with no console errors -- confirming the re-export pattern (`export { X as default } from "./X"`) didn't change any runtime behavior. Committed as `b7018a4`.
+
+**Problems faced**: None -- mechanical refactor, no logic changes, each file verified to compile immediately after creation.
+
+---
+
 *(Next entry: live end-to-end testing once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided -- and once email confirmation is either disabled or the rate limit resets, to complete a full demo signup test.)*
