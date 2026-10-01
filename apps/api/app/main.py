@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.security import AuthenticatedUser, get_current_user
+from app.keys.router import router as keys_router
 
 app = FastAPI(title="CyntraAI API")
+app.include_router(keys_router)
 
 app.add_middleware(
     CORSMiddleware,

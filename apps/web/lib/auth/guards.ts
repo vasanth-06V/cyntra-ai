@@ -29,6 +29,19 @@ export async function requireUser() {
     redirect("/account-setup");
   }
 
+  const { data: geminiKey } = await supabase
+    .from("provider_keys")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("provider", "gemini")
+    .eq("slot", "primary")
+    .eq("is_valid", true)
+    .maybeSingle();
+
+  if (!geminiKey) {
+    redirect("/onboarding");
+  }
+
   const { data: roleRow } = await supabase
     .from("roles")
     .select("role")

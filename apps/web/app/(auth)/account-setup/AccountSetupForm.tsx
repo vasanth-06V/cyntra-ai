@@ -83,7 +83,7 @@ export function AccountSetupForm({
       return;
     }
 
-    router.push("/dashboard");
+    router.push("/onboarding");
     router.refresh();
   }
 
