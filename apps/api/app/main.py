@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.ats.router import router as ats_router
 from app.chat.router import router as chat_router
 from app.core.config import settings
 from app.core.security import AuthenticatedUser, get_current_user
@@ -11,6 +12,7 @@ app = FastAPI(title="CyntraAI API")
 app.include_router(keys_router)
 app.include_router(chat_router)
 app.include_router(rag_router)
+app.include_router(ats_router)
 
 app.add_middleware(
     CORSMiddleware,
