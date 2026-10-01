@@ -65,6 +65,15 @@ export default function SignInPage() {
               >
                 Sign in with email &amp; password instead
               </button>
+
+              {/* TEMPORARY DEV/DEMO LINK -- remove alongside app/(auth)/sign-up
+                  once Google sign-in is configured and verified end-to-end. */}
+              <a
+                href="/sign-up"
+                className="mt-2 block text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
+              >
+                Create a demo account (dev only)
+              </a>
             </>
           ) : (
             <EmailPasswordSignIn onBack={() => setEmailMode(false)} />

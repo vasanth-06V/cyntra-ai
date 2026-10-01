@@ -208,4 +208,22 @@ Committed as `5020b79`.
 
 ---
 
-*(Next entry: live end-to-end testing once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided.)*
+### [2026-10-01] Temporary demo sign-up (email/password) -- explicitly flagged for removal
+
+**Action**: At the user's request, added a temporary email/password account-creation page so the team can demo the product and test end-to-end before Google OAuth credentials are configured, since that was the one piece blocking any real sign-up at all. Built `app/(auth)/sign-up/page.tsx`, opening with a prominent comment block stating it's temporary dev/demo scaffolding to be deleted once Google sign-in is live and verified, per `docs/IMPLEMENTATION.md` Section 7 (Google-only is still the locked target end-state, this is a dev-only exception, not a plan change). Linked it from `sign-in/page.tsx` as "Create a demo account (dev only)", also clearly marked. The flow: `supabase.auth.signUp()` -> if a session comes back immediately (email confirmation disabled on the project), create the `profiles` row right away (same DB trigger assigns the role) and go straight to `/onboarding` since the password is already set at signup, no separate "set password" step needed; if no session comes back (confirmation required), show a "check your email" message instead.
+
+**Why**: Explicit user request -- unblocks real end-to-end testing of everything built so far (auth guards, onboarding gate, dashboard, BYOK key entry) without waiting on Google Cloud Console setup, while keeping the final auth model unchanged and the temporary piece impossible to miss when it's time to remove it.
+
+**Result**: `npx tsc --noEmit` and `npx eslint .` both clean. Live-tested in the browser:
+- Submitting an invalid-format email (`.test` TLD) correctly showed Supabase's own inline validation error.
+- Submitting a reserved/non-deliverable domain (`example.com`) was also correctly rejected by Supabase (RFC 2606 domains are apparently denylisted for signup), with the error surfaced inline exactly as expected.
+- Submitting a syntactically valid Gmail-style address got past validation and attempted to actually send a confirmation email, at which point Supabase returned "email rate limit exceeded" -- the free tier's built-in email sending has a very low hourly cap, and my own repeated test attempts in this session exhausted it.
+
+This confirms two things: the sign-up code itself is wired correctly end-to-end (validation errors, and the actual auth request reaching Supabase's mail-sending step), and the project currently has **email confirmation enabled**, which combined with the low rate limit will make demo account creation slow/frustrating in its current config.
+
+**Problems faced**:
+- Couldn't complete a full successful demo signup in this session because of the combination of (a) email confirmation being on and (b) the free-tier email rate limit being exhausted by the test attempts themselves. This isn't a code bug -- it's a Supabase project *setting* (Authentication -> Providers -> Email -> "Confirm email" toggle) that only the user can change from the dashboard; no MCP tool is available to toggle Supabase Auth settings programmatically. Flagged to the user: disabling email confirmation would make demo signups instant and avoid the rate limit entirely, recommended but left as their choice since it's a project-level security setting.
+
+---
+
+*(Next entry: live end-to-end testing once Supabase service role key / JWT secret / Google OAuth / Cloudflare R2 credentials are provided -- and once email confirmation is either disabled or the rate limit resets, to complete a full demo signup test.)*
