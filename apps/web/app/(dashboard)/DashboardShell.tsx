@@ -14,16 +14,15 @@ const NAV_ITEMS = [
 ];
 
 export async function DashboardShell({ children }: { children: ReactNode }) {
-  const { user, role } = await requireUser();
+  const { user, role, permissions } = await requireUser();
 
-  const navItems =
-    role === "owner"
-      ? [
-          ...NAV_ITEMS,
-          { href: "/settings/team", label: "Team" },
-          { href: "/admin/question-bank", label: "Question Bank" },
-        ]
-      : NAV_ITEMS;
+  const navItems = [...NAV_ITEMS];
+  if (role === "owner") {
+    navItems.push({ href: "/settings/team", label: "Team" });
+  }
+  if (role === "owner" || permissions.includes("manage_question_bank")) {
+    navItems.push({ href: "/admin/question-bank", label: "Question Bank" });
+  }
 
   return (
     <div className="flex min-h-screen">

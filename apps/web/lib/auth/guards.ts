@@ -48,7 +48,18 @@ export async function requireUser() {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  return { user, role: (roleRow?.role ?? "user") as Role };
+  const role = (roleRow?.role ?? "user") as Role;
+
+  let permissions: string[] = [];
+  if (role === "admin") {
+    const { data: permissionRows } = await supabase
+      .from("admin_permissions")
+      .select("permission_key")
+      .eq("admin_id", user.id);
+    permissions = (permissionRows ?? []).map((p) => p.permission_key);
+  }
+
+  return { user, role, permissions };
 }
 
 export async function requireRole(role: Role) {
