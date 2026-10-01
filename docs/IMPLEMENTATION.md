@@ -196,11 +196,36 @@ create table provider_keys (
 create table resumes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id),
-  file_url text not null,                -- Cloudflare R2 object URL
+  file_key text not null,                -- R2 object key (bucket is private, no public URL)
   parsed_text text,
+  created_at timestamptz default now()
+);
+
+-- Added during Phase 4 implementation: a single embedding per resume can't
+-- support real RAG retrieval (a JD requirement needs to match a *specific*
+-- resume section, not the whole document). Supersedes resumes.embedding,
+-- which existed in the original schema draft and was dropped.
+create table resume_chunks (
+  id uuid primary key default gen_random_uuid(),
+  resume_id uuid references resumes(id) on delete cascade,
+  chunk_index int not null,
+  content text not null,
   embedding vector(768),                 -- Gemini text-embedding-004 dimension
   created_at timestamptz default now()
 );
+
+-- pgvector cosine-similarity RPCs backing rag/retrieval.py, called via
+-- Supabase's .rpc(). Plain functions (not SECURITY DEFINER) so RLS on the
+-- underlying tables still applies if ever called directly by a client.
+create or replace function match_resume_chunks(
+  query_embedding vector(768), filter_resume_id uuid, match_count int default 5
+) returns table (id uuid, content text, chunk_index int, similarity float)
+language sql stable as $$ ... $$;
+
+create or replace function match_question_bank(
+  query_embedding vector(768), filter_type interview_type, match_count int default 5
+) returns table (id uuid, question text, test_cases jsonb, tags text[], similarity float)
+language sql stable as $$ ... $$;
 
 create type interview_type as enum (
   'coding', 'behavioral', 'hr', 'ml_ai', 'webd', 'sde', 'system_design', 'case_study'
@@ -379,9 +404,9 @@ A shared helper `keys/service.py::call_with_failover(user_id, provider, fn)`:
 1. `rag/parsing/pdf.py` (via `pdfplumber`) and `docx.py` (via `python-docx`) — extract raw text from uploaded resumes/JD files.
 2. `rag/chunking.py` — simple fixed-size or section-aware chunking (split on headings like "Experience", "Education", "Skills" when detectable, fallback to fixed-token windows).
 3. `rag/embeddings.py` — always calls the Gemini adapter's `embed()` regardless of the user's selected chat provider (per Section 6.1); batches chunk embedding calls.
-4. `rag/retrieval.py` — pgvector cosine-similarity queries (`<=>` operator) against `resumes.embedding` and `question_bank.embedding`.
-5. Resume upload flow: `resumes/page.tsx` lets users upload a PDF/DOCX → Next.js Route Handler uploads raw file to R2 → calls FastAPI `POST /rag/resumes/{id}/process` to parse+chunk+embed → result stored back to the `resumes` row.
-6. **Definition of done**: uploading a resume produces a stored `parsed_text` and non-null `embedding`; a test query against a sample JD returns semantically relevant resume chunks ranked correctly.
+4. `rag/retrieval.py` — pgvector cosine-similarity queries via the `match_resume_chunks`/`match_question_bank` Postgres RPC functions (see Section 5) against `resume_chunks.embedding` and `question_bank.embedding`.
+5. Resume upload flow: `resumes/page.tsx` lets users upload a PDF/DOCX → Next.js Route Handler (`app/api/resumes/route.ts`) uploads raw file to R2 (`resumes/<user_id>/<resume_id>.<ext>`, stored as `resumes.file_key`) → calls FastAPI `POST /rag/resumes/{id}/process`, which downloads the file back from R2, parses/chunks/embeds it, and stores the result in `resumes.parsed_text` + `resume_chunks`.
+6. **Definition of done**: uploading a resume produces a stored `parsed_text` and `resume_chunks` rows with non-null embeddings; a test query against a sample JD returns semantically relevant resume chunks ranked correctly.
 
 ### Phase 5 — ATS Score Service
 **Goal**: full scoring pipeline with sub-scores and feedback.
