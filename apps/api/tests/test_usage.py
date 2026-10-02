@@ -69,3 +69,36 @@ async def test_a_bookkeeping_failure_never_breaks_the_users_request(monkeypatch)
     monkeypatch.setattr(usage, "get_supabase", lambda: _FakeSupabase(error=RuntimeError("db down")))
 
     await usage.record("u1", "gemini", "chat", Usage(requests=1))  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_usage_today_filters_by_user_and_day(monkeypatch):
+    from app.llm import router
+
+    seen = {}
+
+    class _Q:
+        def select(self, *a):
+            return self
+
+        def eq(self, field, value):
+            seen[field] = value
+            return self
+
+        def execute(self):
+            class R:
+                data = [{"provider": "gemini", "kind": "chat", "requests": 3}]
+
+            return R()
+
+    class _DB:
+        def table(self, name):
+            seen["table"] = name
+            return _Q()
+
+    monkeypatch.setattr(router, "get_supabase", lambda: _DB())
+
+    rows = await router.usage_today("u1")
+
+    assert rows[0]["requests"] == 3
+    assert seen["table"] == "llm_usage" and seen["user_id"] == "u1" and "day" in seen

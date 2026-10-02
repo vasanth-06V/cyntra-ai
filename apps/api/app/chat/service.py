@@ -5,10 +5,15 @@ from fastapi import HTTPException, status
 
 from app.core.db import get_supabase
 from app.llm import gateway
+from app.llm.budget import fit_to_budget
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
 
 _OPTIONS = LLMOptions(task="chat")
+
+# Only the recent window is sent: input stays bounded however long the chat gets.
+_MAX_HISTORY_MESSAGES = 10
+_HISTORY_TOKEN_BUDGET = 2000
 
 
 async def create_conversation(user_id: str, title: str | None) -> dict:
@@ -119,8 +124,9 @@ async def stream_reply(
     history_rows = await list_messages(user_id, conversation_id)
     await _append_message(conversation_id, "user", user_content)
 
-    messages = [_row_to_message(row) for row in history_rows]
+    messages = [_row_to_message(row) for row in history_rows[-_MAX_HISTORY_MESSAGES:]]
     messages.append(Message(role=MessageRole.USER, content=user_content))
+    messages = fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0)
 
     collected: list[str] = []
     async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):

@@ -443,4 +443,12 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 
 **Result**: 133 mocked tests pass (new: cache hit / per-user isolation / JD cap; TTL expiry and eviction). Not verified live.
 
-*(Next entry: step 6 -- chat window, /usage, Used-today line.)*
+### [2026-10-02] LLM architecture step 6 -- chat window, usage endpoint, "Used today"
+
+**Action**: Chat now sends only the last 10 messages, further fit to 2,000 tokens (`fit_to_budget`), so input stays bounded (no extra LLM call; rolling summary deferred). New `GET /usage` (`llm/router.py`) returns today's (UTC, matching the table's `day` default) `llm_usage` rows for the signed-in user; new `components/settings/UsageToday.tsx` shows it under Settings -> API Keys.
+
+**Result**: 135 backend tests pass (new: windowed history, usage query). `tsc` clean. `eslint` reports 2 `react-hooks/set-state-in-effect` errors in `QuestionBankView.tsx:42` and `ResumesView.tsx:38` (pre-existing files, not touched by this step; the new component sets state inside a promise callback and is clean) -- to be fixed separately. Not verified live.
+
+**Remaining from the plan**: add an "LLM gateway" section to `docs/IMPLEMENTATION.md`; re-run Supabase advisors (migration 0018 added columns only).
+
+*(Next: Phase 7 -- coding platform, once the user says to continue.)*

@@ -110,3 +110,35 @@ def test_router_returns_a_real_error_status_instead_of_a_broken_stream(monkeypat
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Gemini is temporarily overloaded"
+
+
+@pytest.mark.asyncio
+async def test_history_sent_to_the_model_is_windowed(monkeypatch):
+    from app.chat import service
+
+    rows = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}"} for i in range(40)]
+    sent = {}
+
+    async def owned(*a):
+        return {"id": "c"}
+
+    async def listing(*a):
+        return rows
+
+    async def append(*a, **k):
+        return {}
+
+    async def fake_stream(user_id, provider, messages, options=None):
+        sent["messages"] = messages
+        yield "ok"
+
+    monkeypatch.setattr(service, "_require_owned_conversation", owned)
+    monkeypatch.setattr(service, "list_messages", listing)
+    monkeypatch.setattr(service, "_append_message", append)
+    monkeypatch.setattr(service.gateway, "stream", fake_stream)
+
+    async for _ in service.stream_reply("u", "c", "gemini", "hello"):
+        pass
+
+    assert len(sent["messages"]) == 11  # last 10 + the new message
+    assert sent["messages"][-1].content == "hello"

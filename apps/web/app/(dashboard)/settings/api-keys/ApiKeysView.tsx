@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { UsageToday } from "@/components/settings/UsageToday";
 import { ProviderKeySection } from "@/components/settings/ProviderKeySection";
 import type { ProviderKey } from "@/types/keys";
 
@@ -41,6 +42,7 @@ export function ApiKeysView() {
           />
           <ProviderKeySection provider="groq" keys={keys} onKeysChange={setKeys} />
           <ProviderKeySection provider="claude" keys={keys} onKeysChange={setKeys} />
+          <UsageToday />
         </div>
       )}
     </div>
