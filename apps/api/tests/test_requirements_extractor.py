@@ -49,3 +49,24 @@ async def test_extract_requirements_fills_in_defaults_for_missing_fields(monkeyp
     assert options.json_mode is True
     assert options.temperature == 0.0
     assert options.max_output_tokens is not None
+
+
+@pytest.mark.asyncio
+async def test_same_jd_is_served_from_cache_and_jd_is_truncated(monkeypatch):
+    requirements_extractor._cache = requirements_extractor.TTLCache(ttl_seconds=60)
+    calls = []
+
+    async def fake_complete(user_id, provider, messages, options=None):
+        calls.append(messages[0].content)
+        return '{"must_have": ["Go"]}'
+
+    monkeypatch.setattr(requirements_extractor.gateway, "complete", fake_complete)
+    jd = "word " * 20000
+
+    first = await extract_requirements("u1", "gemini", jd)
+    second = await extract_requirements("u1", "gemini", jd)
+    await extract_requirements("u2", "gemini", jd)  # other user: no sharing
+
+    assert first == second
+    assert len(calls) == 2
+    assert len(calls[0]) < 1500 * 4 + 600  # JD capped at its budget

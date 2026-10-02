@@ -437,4 +437,10 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 
 **Problems faced**: my first edit script wrote real newlines into string literals (SyntaxError caught by pytest collection); fixed. Tool permission denials earlier in the session delayed applying the migration.
 
-*(Next entry: step 5 -- ATS diet.)*
+### [2026-10-02] LLM architecture step 5 -- ATS diet
+
+**Action**: ATS prompts moved to `llm/prompts/ats.py` and shortened; JD truncated to 1,500 tokens before extraction; requirements cached in-process (`llm/ttl_cache.py::TTLCache`, 1 h TTL, 256 items) keyed by `(user_id, sha256(JD))`, so re-scoring the same JD against another resume costs no extraction call. Memory only -- nothing persisted, so "no ATS history" still holds. Feedback stays automatic.
+
+**Result**: 133 mocked tests pass (new: cache hit / per-user isolation / JD cap; TTL expiry and eviction). Not verified live.
+
+*(Next entry: step 6 -- chat window, /usage, Used-today line.)*
