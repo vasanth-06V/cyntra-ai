@@ -21,6 +21,9 @@ DIMENSIONS = 768
 _STOP = {
     "a", "an", "and", "the", "of", "in", "on", "at", "to", "for", "with", "by", "as", "is", "was", "are",
     "from", "that", "this", "it", "its", "or", "be", "been", "were", "per", "than", "into", "over",
+    # structural words every chunk header and every query template carries; a real model
+    # gives them almost no weight for a skill query, a bag of words must be told to
+    "experience", "summary", "education", "skills", "header",
 }
 _FOLD = {
     "postgres": "postgresql", "psql": "postgresql", "k8s": "kubernetes", "eks": "kubernetes",

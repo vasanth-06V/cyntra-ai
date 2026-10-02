@@ -13,6 +13,7 @@ def _gemini_key_row():
 
 
 embed_calls: list[list[str]] = []
+multi_calls: list[tuple] = []
 
 
 @pytest.fixture(autouse=True)
@@ -34,13 +35,20 @@ def _common_mocks(monkeypatch):
         return [[0.1, 0.2] for _ in texts]
 
     monkeypatch.setattr(service.gateway, "embed", fake_embed)
-    monkeypatch.setattr(
-        service,
-        "match_resume_chunks",
-        lambda resume_id, embedding, match_count=1: _async_value(
-            [{"id": "chunk-1", "content": "Python and SQL work.", "similarity": 0.8}]
-        ),
-    )
+    async def fake_multi(resume_id, embeddings, terms, per_query=1):
+        multi_calls.append((list(terms), len(embeddings)))
+        rows = []
+        for i, term in enumerate(terms):
+            present = term.lower() in ("python", "sql")
+            rows.append({
+                "q_idx": i, "chunk_id": f"c{i}", "section": "experience",
+                "content": "Python and SQL work.", "similarity": 0.8 if present else 0.4,
+                "kw_hit": present, "kw_any": present,
+            })
+        return rows
+
+    multi_calls.clear()
+    monkeypatch.setattr(service, "match_resume_chunks_multi", fake_multi)
 
 
 @pytest.mark.asyncio
@@ -65,7 +73,10 @@ async def test_score_resume_success_returns_full_breakdown(monkeypatch):
     assert result["missing_nice_to_have"] == ["Docker"]
     assert result["feedback"] == "Add Docker experience to your resume."
     assert 0 <= result["composite_score"] <= 100
-    assert result["semantic_score"] == pytest.approx(0.8)
+    # Python is backed up (weight 2 -> 1.0); Docker is not (weight 1 -> 0): (2*1 + 1*0) / 3
+    assert result["semantic_score"] == pytest.approx(2 / 3)
+    assert [c["term"] for c in result["coverage"]] == ["Python", "Docker"]
+    assert result["coverage"][0]["covered"] is True and result["coverage"][1]["covered"] is False
 
 
 @pytest.mark.asyncio
@@ -122,17 +133,12 @@ async def test_score_resume_raises_429_when_feedback_generation_exhausts_both_ke
 
 
 @pytest.mark.asyncio
-async def test_all_keywords_are_embedded_in_one_request(monkeypatch):
-    # The free tier counts requests, not texts: 20 keywords must be 1 request.
+async def test_all_requirements_are_one_embedding_request_and_one_retrieval_call(monkeypatch):
+    # The free tier counts requests, not texts: 18 requirements must be 1 request.
     keywords = [f"skill-{i}" for i in range(18)]
 
     async def fake_extract_requirements(user_id, provider, jd_text):
-        return {
-            "must_have": keywords[:12],
-            "nice_to_have": keywords[12:],
-            "experience_level": "mid",
-            "title": "Eng",
-        }
+        return {"must_have": keywords[:12], "nice_to_have": keywords[12:], "experience_level": "mid", "title": "Eng"}
 
     async def fake_generate_feedback(*args, **kwargs):
         return "ok"
@@ -143,4 +149,5 @@ async def test_all_keywords_are_embedded_in_one_request(monkeypatch):
     await service.score_resume("user-1", "resume-1", "gemini", "some JD")
 
     assert len(embed_calls) == 1
-    assert embed_calls[0] == keywords
+    assert embed_calls[0] == [f"Experience with {k}" for k in keywords]  # query-style sentences
+    assert len(multi_calls) == 1 and multi_calls[0][1] == 18  # one DB call carrying all 18 vectors

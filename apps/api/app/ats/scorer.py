@@ -40,6 +40,10 @@ def _term_present(term: str, resume_lower: str) -> bool:
     return any(_contains_word(variant, resume_lower) for variant in _synonym_group(term))
 
 
+def term_present(term: str, resume_text: str) -> bool:
+    return _term_present(term, resume_text.lower())
+
+
 def keyword_score(requirements: dict, resume_text: str) -> float:
     """Weighted exact+synonym match: must-have terms count double a
     nice-to-have, since missing a required skill matters more."""

@@ -13,6 +13,7 @@ Nothing here touches the network or any real API key.
 
 import asyncio
 import copy
+import re
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -320,14 +321,17 @@ class FakeSupabase:
             out = []
             for i, term in enumerate(params["query_terms"]):
                 words = [w for w in term.lower().split() if w]
-                contains = lambda c: all(w in c["content"].lower() for w in words)  # noqa: E731
+                contains = lambda c: all(  # noqa: E731
+                    re.search(r"\b" + re.escape(w) + r"\b", c["content"].lower()) for w in words
+                )  # whole words, like the real full-text match
                 kw_any = any(contains(c) for c in chunks)
                 # best chunk: prefer one that mentions the term (a stand-in for similarity ordering)
                 ordered = sorted(chunks, key=lambda c: (not contains(c), c["chunk_index"]))
                 for c in ordered[: params.get("per_query", 1)]:
                     out.append({
                         "q_idx": i, "chunk_id": c["id"], "section": c.get("section"), "content": c["content"],
-                        "similarity": self.similarity, "kw_hit": contains(c), "kw_any": kw_any,
+                        "similarity": self.similarity if contains(c) else 0.3,
+                        "kw_hit": contains(c), "kw_any": kw_any,
                     })
             return out
         if name == "match_question_bank_v2":
@@ -434,7 +438,7 @@ class FakeAdapter(ProviderAdapter):
             yield text
 
     async def embed_many(self, api_key, texts, usage=None, kind="doc"):
-        self.embed_calls.append(SimpleNamespace(api_key=api_key, texts=list(texts)))
+        self.embed_calls.append(SimpleNamespace(api_key=api_key, texts=list(texts), kind=kind))
         if api_key in self.rate_limited_keys:
             raise ProviderRateLimitError("quota")
         if usage is not None:

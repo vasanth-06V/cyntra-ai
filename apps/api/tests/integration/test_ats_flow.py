@@ -28,14 +28,19 @@ async def test_score_success_has_all_subscores_and_costs_expected_requests(clien
     assert r.status_code == 200
     d = r.json()
     assert set(d) == {"composite_score", "keyword_score", "semantic_score", "formatting_score",
-                      "feedback", "missing_must_have", "missing_nice_to_have"}
+                      "feedback", "missing_must_have", "missing_nice_to_have", "coverage"}
     assert 0 <= d["composite_score"] <= 100
     assert d["keyword_score"] > 0.5            # python + kubernetes are in the resume
-    assert d["semantic_score"] == pytest.approx(0.75)
+    assert d["semantic_score"] > 0.5           # the resume mentions the requirements: strongly covered
+    assert {c["term"].lower() for c in d["coverage"]} >= {"python", "kubernetes"}
+    assert all(c["evidence"] for c in d["coverage"] if c["covered"])  # evidence is returned for covered terms
     assert d["formatting_score"] == 1.0
     assert "Kubernetes" in d["feedback"]
-    # 1 batched embedding + exactly 2 LLM calls (extract, feedback)
+    # 1 batched embedding + exactly 2 LLM calls (extract, feedback) + ONE retrieval call (it used to be ~20)
     assert len(env.gemini.embed_calls) == 1
+    assert [name for name, _ in env.db.rpc_calls].count("match_resume_chunks_multi") == 1
+    assert env.gemini.embed_calls[0].kind == "query"
+    assert all(t.startswith("Experience with ") for t in env.gemini.embed_calls[0].texts)
     assert [c.options.task for c in env.gemini.chat_calls] == ["extract", "feedback"]
     assert env.gemini.chat_calls[0].options.json_mode is True
 

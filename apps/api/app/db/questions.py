@@ -87,3 +87,27 @@ async def match_question_bank(
         ).execute()
 
     return (await run(_q)).data
+
+
+async def match_question_bank_v2(
+    query_embedding: list[float],
+    interview_type: str,
+    exclude_ids: list[str] | None = None,
+    candidate_count: int = 12,
+) -> list[dict]:
+    """Nearest questions of this type, minus ones already asked, each with its
+    embedding (as text) for diversity selection. Never returns test cases."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.rpc(
+            "match_question_bank_v2",
+            {
+                "query_embedding": query_embedding,
+                "filter_type": interview_type,
+                "exclude_ids": exclude_ids or [],
+                "candidate_count": candidate_count,
+            },
+        ).execute()
+
+    return (await run(_q)).data or []
