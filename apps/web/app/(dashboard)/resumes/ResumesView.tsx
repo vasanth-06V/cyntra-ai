@@ -131,7 +131,7 @@ export function ResumesView() {
         </div>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        PDF or DOCX, up to 4MB. Used for interviews and ATS score checks.
+        PDF or DOCX, up to 500KB. Used for interviews and ATS score checks.
       </p>
 
       {error && (

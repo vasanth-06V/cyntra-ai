@@ -162,3 +162,13 @@ async def test_enormous_document_is_rejected_or_capped(client, env, r2):
     r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
     texts = sum(len(c.texts) for c in env.gemini.embed_calls)
     assert r.status_code >= 400 or texts <= 100
+
+
+async def test_a_file_over_500kb_is_rejected_before_parsing_or_embedding(client, env, r2):
+    seed_key(env, USER_A, "gemini", "primary", "gem")
+    resume = _resume(env)
+    r2[resume["file_key"]] = b"x" * (500 * 1024 + 1)
+    r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
+    assert r.status_code == 422
+    assert "500KB" in r.json()["error"]["message"]
+    assert env.gemini.embed_calls == []

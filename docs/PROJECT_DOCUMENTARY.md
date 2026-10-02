@@ -553,3 +553,10 @@ Offline eval, v1 -> v2 (fake embedder): section recall on the ALL-CAPS resume 0.
 **Why**: Supabase Storage is free (1 GB), needs no card, and speaks the S3 protocol, so no logic changed.
 **Result**: 504 backend tests pass; `tsc` clean. Not yet exercised against a real bucket.
 **Problems**: none. The owner must create a private bucket and S3 access keys in Supabase and fill the five variables.
+
+### [2026-10-03] Resume upload limit lowered to 500 KB
+
+**Action**: Web upload route, API processing check and UI hint now all say 500 KB (was 4 MB / 5 MB / "4MB"); new integration test for an oversized file.
+**Why**: Owner's resume is ~210 KB; resumes are small text documents, and a tight limit bounds parse/embedding cost and abuse.
+**Result**: tests and `tsc` pass. The Vercel 4.5 MB body cap is no longer the binding limit.
+**Problems**: none.

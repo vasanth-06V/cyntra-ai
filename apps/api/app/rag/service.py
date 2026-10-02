@@ -32,7 +32,7 @@ _DIGEST_OPTIONS = LLMOptions(
 )
 _DIGEST_INPUT_TOKENS = 1500
 _DIGEST_MAX_TOKENS = 300
-_MAX_FILE_BYTES = 5 * 1024 * 1024
+_MAX_FILE_BYTES = 500 * 1024  # keep equal to the web upload limit
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request
 
 
@@ -97,7 +97,7 @@ async def process_resume(user_id: str, resume_id: str) -> int:
     if len(file_bytes) > _MAX_FILE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="This file is too large to process (max 5MB).",
+            detail="This file is too large to process (max 500KB).",
         )
     try:
         text = await asyncio.to_thread(extract_text, resume["file_key"], file_bytes)

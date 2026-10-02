@@ -4,9 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { deleteFromStorage, uploadToStorage } from "@/lib/storage";
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx"];
-// Vercel functions reject request bodies over 4.5 MB, so stay under it until
-// uploads go straight to R2 (see docs/PILLARS_PLAN.md, D8).
-const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
+// Resumes are small text documents (typically ~200 KB). Keep this equal to
+// _MAX_FILE_BYTES in api/app/rag/service.py and the UI hint in ResumesView.
+const MAX_FILE_SIZE_BYTES = 500 * 1024; // 500KB
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return NextResponse.json({ error: "File is too large (max 4MB)" }, { status: 400 });
+    return NextResponse.json({ error: "File is too large (max 500KB)" }, { status: 400 });
   }
 
   const resumeId = randomUUID();
