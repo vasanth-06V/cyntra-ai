@@ -129,7 +129,7 @@ export function AtsScoreView() {
       )}
 
       {result && (
-        <div className="mt-6 max-w-md">
+        <div className="mt-8 max-w-5xl">
           <ScoreBreakdown result={result} />
         </div>
       )}
