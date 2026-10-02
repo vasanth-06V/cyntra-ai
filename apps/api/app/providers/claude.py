@@ -64,7 +64,9 @@ def _record_usage(usage: Usage | None, message, started: float | None = None) ->
         usage.input_tokens += getattr(reported, "input_tokens", 0) or 0
         usage.output_tokens += getattr(reported, "output_tokens", 0) or 0
         usage.cached_tokens += getattr(reported, "cache_read_input_tokens", 0) or 0
-    usage.finish_reason = _STOP_REASONS.get(getattr(message, "stop_reason", None) or "", "other") if getattr(message, "stop_reason", None) else usage.finish_reason
+    stop_reason = getattr(message, "stop_reason", None)
+    if stop_reason:
+        usage.finish_reason = _STOP_REASONS.get(stop_reason, "other")
 
 
 def map_error(exc: Exception) -> Exception:

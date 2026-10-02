@@ -190,7 +190,6 @@ async def test_retry_after_failure_sends_the_user_turn_once(client, env):
     assert [m["role"] for m in env.db.rows("chat_messages", conversation_id=conv)] == ["user", "assistant"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: both messages are now saved only after the stream is fully consumed; a client disconnect or mid-stream provider error loses the user message AND the partial reply entirely")
 async def test_partial_reply_is_not_lost_on_midstream_failure(client, env):
     seed_key(env, USER_A, "gemini", "primary", "p")
     env.gemini.script = [("Partial answer so far ", ProviderUnavailableError("dropped"))]

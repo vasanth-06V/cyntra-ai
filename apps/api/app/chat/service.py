@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 
 from fastapi import status
@@ -8,6 +9,8 @@ from app.llm import gateway
 from app.llm.budget import ensure_user_first, fit_to_budget
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
+
+logger = logging.getLogger(__name__)
 
 _OPTIONS = LLMOptions(task="chat", feature="chat")
 
@@ -67,12 +70,18 @@ async def stream_reply(
     messages = ensure_user_first(fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0))
 
     collected: list[str] = []
-    async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):
-        collected.append(chunk)
-        yield chunk
-
-    # Both messages are saved only once the reply completed: a failed send
-    # leaves no orphaned user message, so the user's retry doesn't duplicate it
-    # or produce back-to-back user turns in the history.
-    await _append_message(conversation_id, "user", user_content)
-    await _append_message(conversation_id, "assistant", "".join(collected), provider)
+    try:
+        async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):
+            collected.append(chunk)
+            yield chunk
+    finally:
+        # Saved on every exit once the user has seen any text -- completion, a
+        # mid-stream provider error, or the client disconnecting -- so what
+        # they read is what is in the history. A send that failed before the
+        # first word saves nothing, so a retry can't duplicate the message.
+        if collected:
+            try:
+                await _append_message(conversation_id, "user", user_content)
+                await _append_message(conversation_id, "assistant", "".join(collected), provider)
+            except Exception:
+                logger.warning("Could not save the chat exchange", exc_info=True)

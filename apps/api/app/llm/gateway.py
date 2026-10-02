@@ -68,6 +68,9 @@ _MAX_HINTED_WAIT = 8.0
 # same key before giving up on it.
 _MAX_RPM_WAIT = 8.0
 _DEFAULT_RPM_COOLDOWN = 60.0
+# Added to twice the per-call timeout to bound a whole non-streaming call
+# (limiter wait + every attempt + backoff).
+_DEADLINE_SLACK = 10.0
 
 
 # --------------------------------------------------------------------------
@@ -337,7 +340,7 @@ async def complete_full(
     trace = _new_trace(provider, options)
     started = time.perf_counter()
     # The whole call -- limiter wait, every attempt, backoff -- is bounded.
-    deadline = (options.timeout_s or timeout_for(options.task)) * 2 + 10
+    deadline = (options.timeout_s or timeout_for(options.task)) * 2 + _DEADLINE_SLACK
 
     current = options
 

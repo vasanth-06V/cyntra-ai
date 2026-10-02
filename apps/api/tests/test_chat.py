@@ -142,3 +142,40 @@ async def test_history_sent_to_the_model_is_windowed(monkeypatch):
 
     assert len(sent["messages"]) == 11  # last 10 + the new message
     assert sent["messages"][-1].content == "hello"
+
+
+@pytest.mark.asyncio
+async def test_a_client_disconnect_mid_reply_saves_what_the_user_saw(monkeypatch, stored):
+    _patch_gateway(monkeypatch, chunks=("Partial ", "answer ", "that never finished"))
+
+    agen = service.stream_reply("user-1", "conv-1", "gemini", "hi")
+    assert await agen.__anext__() == "Partial "
+    await agen.aclose()  # the browser tab was closed
+
+    assert [(m["role"], m["content"]) for m in stored] == [("user", "hi"), ("assistant", "Partial ")]
+
+
+@pytest.mark.asyncio
+async def test_a_provider_error_after_some_text_keeps_the_partial_reply(monkeypatch, stored):
+    from app.providers.base import ProviderUnavailableError
+
+    async def breaking_stream(user_id, provider, messages, options=None):
+        yield "Half an answ"
+        raise ProviderUnavailableError("connection dropped")
+
+    monkeypatch.setattr(service.gateway, "stream", breaking_stream)
+
+    with pytest.raises(ProviderUnavailableError):
+        await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
+
+    assert stored[-1]["content"] == "Half an answ"
+
+
+@pytest.mark.asyncio
+async def test_a_failure_before_any_text_saves_nothing(monkeypatch, stored):
+    _patch_gateway(monkeypatch, error=HTTPException(status_code=503, detail="overloaded"))
+
+    with pytest.raises(HTTPException):
+        await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
+
+    assert stored == []
