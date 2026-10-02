@@ -2,12 +2,26 @@ import asyncio
 from collections.abc import AsyncIterator
 
 import google.generativeai as genai
-from google.api_core.exceptions import PermissionDenied, ResourceExhausted, Unauthenticated
+from google.api_core.exceptions import (
+    InvalidArgument,
+    PermissionDenied,
+    ResourceExhausted,
+    Unauthenticated,
+)
 
 from app.providers.base import Message, MessageRole, ProviderAdapter, ProviderAuthError, ProviderRateLimitError
 
-_MODEL_NAME = "gemini-1.5-flash"
-_EMBEDDING_MODEL = "models/text-embedding-004"
+# "-latest" aliases track Google's current model rather than a pinned
+# version: the pinned gemini-1.5-flash this originally used was retired and
+# broke key validation outright (a 404 surfaced as a 500 on first live use).
+_MODEL_NAME = "gemini-flash-latest"
+
+# text-embedding-004 is gone; gemini-embedding-001 is the current model.
+# It returns 3072 dims by default, so it's requested at 768 to match the
+# vector(768) columns in the schema (cosine distance is scale-invariant, so
+# the truncated vectors are fine for similarity search).
+_EMBEDDING_MODEL = "models/gemini-embedding-001"
+EMBEDDING_DIMENSIONS = 768
 
 
 def _to_gemini_contents(messages: list[Message]) -> tuple[str | None, list[dict]]:
@@ -34,7 +48,9 @@ class GeminiAdapter(ProviderAdapter):
                 "hi", generation_config={"max_output_tokens": 5}
             )
             return True
-        except (PermissionDenied, Unauthenticated):
+        except (PermissionDenied, Unauthenticated, InvalidArgument):
+            # Google reports a malformed/unknown API key as InvalidArgument
+            # ("API key not valid"), not as an auth error.
             return False
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
@@ -64,7 +80,10 @@ class GeminiAdapter(ProviderAdapter):
         genai.configure(api_key=api_key)
         try:
             result = await asyncio.to_thread(
-                genai.embed_content, model=_EMBEDDING_MODEL, content=text
+                genai.embed_content,
+                model=_EMBEDDING_MODEL,
+                content=text,
+                output_dimensionality=EMBEDDING_DIMENSIONS,
             )
             return result["embedding"]
         except (PermissionDenied, Unauthenticated) as exc:

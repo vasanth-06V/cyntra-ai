@@ -5,8 +5,8 @@ from anthropic import AuthenticationError, RateLimitError
 
 from app.providers.base import Message, MessageRole, ProviderAdapter, ProviderAuthError, ProviderRateLimitError
 
-_VALIDATE_MODEL = "claude-3-5-haiku-20241022"
-_CHAT_MODEL = "claude-3-5-sonnet-20241022"
+_VALIDATE_MODEL = "claude-haiku-4-5-20251001"
+_CHAT_MODEL = "claude-sonnet-5"
 
 
 def _to_anthropic_messages(messages: list[Message]) -> tuple[str | None, list[dict]]:
