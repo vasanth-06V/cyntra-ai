@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from cryptography.fernet import Fernet
 from fastapi import Header, HTTPException, status
@@ -23,6 +25,8 @@ class AuthenticatedUser:
         self.user_id = user_id
         self.email = email
 
+
+logger = logging.getLogger(__name__)
 
 _jwks_cache: dict[str, dict] = {}
 
@@ -71,6 +75,7 @@ async def _decode_supabase_jwt(token: str) -> dict:
             token, key, algorithms=["ES256", "RS256"], audience="authenticated"
         )
     except (JWTError, httpx.HTTPError) as exc:
+        logger.warning("Rejected bearer token: %r", exc)
         raise invalid from exc
 
 
