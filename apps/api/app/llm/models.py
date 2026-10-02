@@ -6,15 +6,18 @@ token for gemini-flash-latest (a "thinking" model) vs ~0.9s for
 gemini-flash-lite-latest, and a far higher free-tier daily quota. Chat and
 the voice interviews need low latency more than maximum depth.
 
-Claude and Groq names are NOT verified against a live key yet.
+IDs last verified against the providers' docs on 2026-10-02 (see docs/FACTS.md);
+not yet exercised with a live key. Re-check before relying on a name: Claude Haiku
+4.5 is announced to retire no sooner than 2026-10-15, so the "fast" tier points at
+Sonnet 5.5 as well until that is re-evaluated.
 """
 
 EMBEDDING_MODEL = "models/gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768  # matches the vector(768) columns
 
 _GEMINI = "gemini-flash-lite-latest"
-_CLAUDE_FAST = "claude-haiku-4-5-20251001"
-_CLAUDE_STRONG = "claude-sonnet-5"
+_CLAUDE_STRONG = "claude-sonnet-5-5"
+_CLAUDE_FAST = _CLAUDE_STRONG
 _GROQ_FAST = "llama-3.1-8b-instant"
 _GROQ_STRONG = "llama-3.3-70b-versatile"
 

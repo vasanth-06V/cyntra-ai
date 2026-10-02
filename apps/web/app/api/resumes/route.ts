@@ -4,7 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { deleteFromR2, uploadToR2 } from "@/lib/storage";
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx"];
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
+// Vercel functions reject request bodies over 4.5 MB, so stay under it until
+// uploads go straight to R2 (see docs/PILLARS_PLAN.md, D8).
+const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return NextResponse.json({ error: "File is too large (max 5MB)" }, { status: 400 });
+    return NextResponse.json({ error: "File is too large (max 4MB)" }, { status: 400 });
   }
 
   const resumeId = randomUUID();

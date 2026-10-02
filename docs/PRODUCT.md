@@ -28,7 +28,7 @@ A **single-tenant AI platform** with three services under one account system, ru
 |---|---|
 | Google sign-in (Supabase Auth, OAuth) | ✅ verified live |
 | Account-setup step (Gmail shown read-only + set a password used as an *alternate login*) | ✅ |
-| Profile + role created automatically; **first user becomes Owner** (DB trigger) | ✅ (race-safe version is in unapplied migration 0019) |
+| Profile + role created automatically; **first user becomes Owner** (DB trigger) | ✅ (race-safe, applied via migration 0019) |
 | Route guards (signed in → account setup → onboarding → dashboard), role/permission helpers (`requireRole`, `requirePermission`) | ✅ |
 | Backend JWT verification (ES256 via JWKS, HS256 fallback, `exp` required, blank-secret refused) | ✅ |
 | Temporary demo email/password sign-up page (for building without Google) | ✅ exists — **must be deleted before launch** |
@@ -123,7 +123,7 @@ Browser ── Next.js 16 (Vercel) ──────────────►
 | Storage | Cloudflare R2 (10 GB free, zero egress) — *not yet configured* |
 | Code execution (planned) | Judge0 (decision pending — see §8) |
 | Hosting (planned) | Vercel (web) + Render free (API) + Supabase free |
-| Tests | pytest: 276 passing + 3 strict known-bug markers; tsc / eslint / `next build` clean |
+| Tests | pytest: 283 passing + 3 strict known-bug markers; tsc / eslint / `next build` clean |
 
 **Trust model:** Next.js owns light CRUD (resume metadata/upload, auth). FastAPI owns anything touching an LLM, embeddings or (later) voice. The browser calls FastAPI directly with the Supabase JWT; FastAPI verifies it and uses the **service role**, so ownership is enforced in code (every query is scoped by `user_id`).
 
@@ -143,7 +143,7 @@ docs/      IMPLEMENTATION.md · PROJECT_DOCUMENTARY.md · PILLARS_PLAN.md · PRO
 `GET /health`, `GET /health/authenticated` · **Keys:** `POST/GET /keys`, `DELETE /keys/{id}` · **Chat:** `POST/GET /chat/conversations`, `GET|POST /chat/conversations/{id}/messages` (POST streams text) · **RAG:** `POST /rag/resumes/{id}/process` · **ATS:** `POST /ats/score` · **Interviews:** `POST /interviews`, `GET /interviews`, `GET /interviews/{id}`, `GET …/transcript`, `POST …/turns`, `POST …/complete`; question bank `GET|POST /interviews/question-bank`, `PATCH|DELETE …/{id}` (permission-gated) · **Usage:** `GET /usage`. Next route handlers: `GET|POST /api/resumes`, `DELETE /api/resumes/{id}`, `/auth/callback`.
 
 ### 3.3 Data model (live, 14 tables, RLS on all)
-`profiles` · `roles` · `admin_permissions` · `provider_keys` · `notifications` · `resumes` (+`digest`) · `resume_chunks` (vector 768) · `conversations` · `chat_messages` · `interviews` (+`brief`, `summarized_through_turn`, `running_summary`, `selected_question_ids`, `provider`) · `interview_transcripts` · `question_bank` (vector 768) · `interview_reports` (unused yet) · `llm_usage` (daily per user/provider/kind). Migrations `0001–0018` applied; **`0019_audit_hardening` written, not yet applied**.
+`profiles` · `roles` · `admin_permissions` · `provider_keys` · `notifications` · `resumes` (+`digest`) · `resume_chunks` (vector 768) · `conversations` · `chat_messages` · `interviews` (+`brief`, `summarized_through_turn`, `running_summary`, `selected_question_ids`, `provider`) · `interview_transcripts` · `question_bank` (vector 768) · `interview_reports` (unused yet) · `llm_usage` (daily per user/provider/kind). Migrations `0001–0018` applied; `0019_audit_hardening` applied on 2026-10-02.
 
 ---
 
@@ -227,9 +227,10 @@ docs/      IMPLEMENTATION.md · PROJECT_DOCUMENTARY.md · PILLARS_PLAN.md · PRO
 | 10-02 | **LLM architecture steps 1–6** | Foundation, batching, gateway (limiter/failover/usage, `llm_usage` + migration 0017), interview diet (migration 0018), ATS diet, chat window + `/usage` + "Used today" |
 | 10-02 | **Self-audit** | Fixed raw-JSON greeting, early question reveal, summary failing a turn, turn-order; blocked-reply 422; eslint errors; gateway docs |
 | 10-02 | **Phase 1–6 audit by 3 agents** | 132 integration tests added; fixes across auth (forgery hole), keys, ATS, interviews, RAG, frontend; migration 0019 written |
-| 10-02 | **Pillars plan (RAG/LLM/backend)** + risk research | `docs/PILLARS_PLAN.md` rev 2 (proposed) |
+| 10-02 | **Pillars plan (RAG/LLM/backend)** + risk research | `docs/PILLARS_PLAN.md` rev 2 — approved |
+| 10-02 | **M0 safety net** | 0019 applied live; startup config validation; CORS/docs from env; CI workflow; Claude IDs fixed; `docs/FACTS.md`; 4 MB upload limit |
 
-**Quality gates today:** 276 backend tests pass (+3 deliberate known-bug markers), `tsc`, `eslint`, `next build` clean. Nothing about R2/resume upload, ATS, interviews, Claude, Groq or batched embeddings has run against real services yet.
+**Quality gates today:** 283 backend tests pass (+3 deliberate known-bug markers), `tsc`, `eslint`, `next build` clean. Nothing about R2/resume upload, ATS, interviews, Claude, Groq or batched embeddings has run against real services yet.
 
 ---
 
@@ -238,7 +239,7 @@ docs/      IMPLEMENTATION.md · PROJECT_DOCUMENTARY.md · PILLARS_PLAN.md · PRO
 - **Verified live:** Google sign-in, account setup, Owner role, onboarding, encrypted Gemini key, streamed chat.
 - **Built but unverified live (blocked on R2 credentials or a first manual run):** resume upload/processing, ATS, interview setup and turns, question-bank UI, Claude and Groq adapters, batched embeddings.
 - **Credentials:** Supabase keys in `apps/api/.env` (gitignored); Gemini key stored for the Owner; **no R2, Groq or Claude keys**.
-- **Open items:** apply `0019`; fix Claude model ID (`claude-sonnet-5` → `claude-sonnet-5-5`; Haiku 4.5 retires no sooner than 2026-10-15); delete the demo sign-up; notifications and key-delete UI; "Leaked Password Protection" is a dashboard toggle (user's choice).
+- **Open items:** delete the demo sign-up; notifications and key-delete UI; "Leaked Password Protection" is a dashboard toggle (user's choice).
 - **Known weaknesses being addressed by the pillars plan:** no timeouts/deadline on provider calls, truncation not detected, prompt-injection exposure, long work runs inside one request, non-atomic multi-step writes, ATS semantic score uncalibrated, no retrieval evals, any signed-in user can read the question bank.
 
 ---
@@ -250,7 +251,7 @@ Strengthen the three pillars (**RAG pipeline, LLM pipeline, backend architecture
 
 | Milestone | What | Needed by |
 |---|---|---|
-| **M0 Safety net** | Apply 0019; startup config validation + CORS/docs from env; CI; fix Claude model IDs; `docs/FACTS.md`; interim 4 MB upload limit | — |
+| **M0 Safety net** ✅ done 2026-10-02 | 0019 applied; startup config validation + CORS/docs from env; CI workflow; Claude model IDs fixed; `docs/FACTS.md`; interim 4 MB upload limit | — |
 | **M1 Platform core** | Unified error codes + request ids + JSON logs; owner-scoped repository layer; "waking the server" UI; rate limits; pagination | everything |
 | **M2 LLM hardening** | Thinking control, timeouts + deadline, finish-reason handling, error taxonomy, streaming-disconnect safety, structured output + repair, prompt-injection defense, background summaries, per-key limiter, Pacific-day usage, adapter fixture tests + user-run smoke script | Phases 7, 8, 9 |
 | **M3 RAG v2** | Eval harness first; embedding task types + normalization + versioning (re-embed is free: tables empty); chunker v2; one-call multi-term retrieval; calibrated ATS; question selection with diversity/difficulty/exclusion; **question-bank lockdown** | Phase 7 |
@@ -265,7 +266,7 @@ Strengthen the three pillars (**RAG pipeline, LLM pipeline, backend architecture
 | **10 — Polish & launch** | Dockerfile/Render config, `/ready`, CORS for the Vercel domain, Supabase redirect URLs, delete demo sign-up, accessibility + reduced motion, error-state sweep, Playwright smoke | all |
 
 ### 8.3 Decisions still needed from you
-1. Approve the pillars plan (or reorder it). 2. Apply migration 0019 + the Claude model-ID fix. 3. Confirm re-embedding now is fine (vector tables are empty) and whether to compare `gemini-embedding-2`. 4. OK to migrate to `google-genai` before voice. 5. OK with direct-to-R2 upload and `pg_cron` expiry. 6. Keep-warm pinger for Render (one service ≈744 of 750 free hours)? 7. **Code execution:** paid hosted Judge0 (~€27/mo, 2,000 runs/day), self-hosted Judge0, or demo on the free shared key (≈50 runs/day) first. 8. Provide **Cloudflare R2 credentials** (needed to run resumes → ATS → interviews live) and, optionally, Groq/Claude keys.
+(Plan approved and M0 done on 2026-10-02.) 3. Confirm re-embedding now is fine (vector tables are empty) and whether to compare `gemini-embedding-2`. 4. OK to migrate to `google-genai` before voice. 5. OK with direct-to-R2 upload and `pg_cron` expiry. 6. Keep-warm pinger for Render (one service ≈744 of 750 free hours)? 7. **Code execution:** paid hosted Judge0 (~€27/mo, 2,000 runs/day), self-hosted Judge0, or demo on the free shared key (≈50 runs/day) first. 8. Provide **Cloudflare R2 credentials** (needed to run resumes → ATS → interviews live) and, optionally, Groq/Claude keys.
 
 ---
 
@@ -278,7 +279,7 @@ Render free: spins down after 15 min idle, ~1 min cold start, 750 instance-hours
 
 ```bash
 # API (from apps/api; venv at apps/api/venv)
-source venv/Scripts/activate && python -m pytest -q          # 276 passed, 3 xfailed
+source venv/Scripts/activate && python -m pytest -q          # 283 passed, 3 xfailed
 # Web (from apps/web)
 npx tsc --noEmit && npx eslint . && npx next build
 ```

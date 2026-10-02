@@ -477,3 +477,20 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 **Still open (lower priority)**: question-bank delete/optimistic-delete confirmation dialogs; key delete UI and a notifications UI (backend writes them, nothing shows them); account-setup password-retry edge; accessibility labels on remaining forms and reduced-motion support (Phase 10); CORS origins hard-coded to localhost and public `/docs` (deployment phase); setup runs synchronously instead of the plan's polled `setting_up` state; the temporary demo sign-up must be removed; Playwright/frontend tests do not exist yet; `/rag` concurrent `process` calls on one resume could interleave.
 
 *(Next: Phase 7 -- coding platform, once the user says to continue.)*
+
+### [2026-10-02] Pillars plan approved; M0 (safety net) done
+
+**Action**: The user approved `docs/PILLARS_PLAN.md` (rev 2) and the start of M0 (after reading `docs/PRODUCT.md`). M0 delivered:
+1. **Migration 0019 applied to the live DB** (user-approved) and verified by query: unique `(interview_id, turn_index)` index present; unique `(admin_id, permission_key)` present; `interviews.resume_id` FK is now `ON DELETE SET NULL`; no INSERT/UPDATE/DELETE grants for clients on `provider_keys`, `interviews`, `interview_transcripts`; clients can no longer read `provider_keys.encrypted_key` (they keep `is_valid` etc.); `anon` has no table grants; first-Owner trigger now takes an advisory lock. Security advisor: only the known "Leaked Password Protection" WARN remains.
+2. **Claude model IDs fixed** (`llm/models.py`): `claude-sonnet-5` (legacy) -> `claude-sonnet-5-5`; the "fast" tier now also points at Sonnet 5.5 because Haiku 4.5 is announced to retire no sooner than 2026-10-15. Header comment records the verification date.
+3. **Startup configuration validation** (`core/config.py::config_problems / validate_config`, run in the FastAPI lifespan): fails at boot with a readable list when `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` or `KEY_ENCRYPTION_SECRET` (must be a valid Fernet key) are missing; in production also requires R2 settings and a non-localhost `CORS_ORIGINS`. The real `.env` was checked and passes.
+4. **CORS origins from settings** (`CORS_ORIGINS`, comma-separated; default `http://localhost:3000`), **interactive docs/OpenAPI disabled when `ENVIRONMENT=production`**, `/health` no longer returns the environment name.
+5. **Interim upload limit lowered 5 MB -> 4 MB** in the Next route and UI text (Vercel's 4.5 MB request-body cap).
+6. **CI workflow** `.github/workflows/ci.yml` (pytest; tsc + eslint + next build with placeholder public env). The repo has no git remote yet, so it will first run once a remote exists.
+7. **`docs/FACTS.md`** created: every external limit/ID with source URL and verification date, plus the still-unmeasured items.
+
+**Result**: 283 backend tests pass (+3 strict known-bug markers; the two migration-dependent ones now need app-side handling, planned in M4), `tsc` / `eslint` clean. Nothing exercised live beyond the DB verification query.
+
+**Problems faced**: a long shell heredoc was silently truncated (nothing applied); fixed by writing the patch script to a file and running it. Lesson: for multi-line edits use script files, not inline heredocs.
+
+*(Next: M1 -- platform core: error codes + request ids + JSON logs, owner-scoped repository layer, "waking the server" UI, rate limits, pagination.)*
