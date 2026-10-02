@@ -1,6 +1,6 @@
 # CyntraAI — the three pillars: audit and plan
 
-Status: **APPROVED 2026-10-02 (rev 2). M0-M3 done; M4 done except applying migration 0025; Phase 7 (coding platform) is next, after the execution-backend decision.**
+Status: **APPROVED 2026-10-02 (rev 2). M0-M3 done; M4 done (migrations 0021, 0022, 0025 applied); Phase 7 (coding platform) is next, after the execution-backend decision.**
 Sources: three independent read-only audits (RAG, LLM, backend) run on 2026-10-02 against commit `4f81442`, each rated against best practice with file/line evidence. Claims below were verified in code/DB unless marked *(to verify)*. No live provider calls were made.
 
 ---
@@ -113,8 +113,8 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 | `0019` (exists) | audit hardening | M0 |
 | `0020_rag_v2` | `embed_model/section/difficulty/topic/content_hash`, tsvector+GIN, multi/v2/replace RPCs, **question_bank lockdown** | M3 |
 | `0021_atomic_turns` | `append_interview_turns` (row lock, both turns in one insert), `admin_permissions` unique grant | M4.1 |
-| `0022_jobs` | `jobs` table, one active job per user+kind, RLS locked | M4.2 (written; apply with go-ahead) |
-| `0025_atomic_chat` | `append_chat_exchange` (both messages in one transaction, ordered timestamps) | M4.3 (written; apply with go-ahead) |
+| `0022_jobs` | `jobs` table, one active job per user+kind, RLS locked | M4.2 (applied) |
+| `0025_atomic_chat` | `append_chat_exchange` (both messages in one transaction, ordered timestamps) | M4.3 (applied) |
 | later (deferred by owner 2026-10-03) | resume rename (`resumes.name`), 3-resume limit trigger, `ats_history` (last 10) | backlog |
 | `0023_llm_observability` | `llm_usage.feature/model/thought_tokens`, Pacific-day column for Gemini, prompt-version columns | M2 |
 | `0024_coding` | `code_submissions`, `test_results` | Phase 7 |
