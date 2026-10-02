@@ -320,6 +320,22 @@ class FakeSupabase:
                 self.seed("interview_transcripts", interview_id=params["p_interview_id"],
                           turn_index=nxt + offset, speaker=speaker, text=text)
             return nxt
+        if name == "append_chat_exchange":
+            convo = next(
+                (r for r in self.tables.get("conversations", [])
+                 if r["id"] == params["p_conversation_id"] and r["user_id"] == params["p_user_id"]),
+                None,
+            )
+            if convo is None:
+                raise APIError({"message": "conversation not found", "code": "P0002", "details": None, "hint": None})
+            hook = self.fail_on.get(("chat_messages", "insert"))
+            if hook:
+                raise hook  # atomic: nothing was stored
+            self.seed("chat_messages", conversation_id=params["p_conversation_id"], role="user",
+                      content=params["p_user_text"], provider=None)
+            self.seed("chat_messages", conversation_id=params["p_conversation_id"], role="assistant",
+                      content=params["p_assistant_text"], provider=params["p_provider"])
+            return None
         if name == "match_resume_chunks_multi":
             chunks = sorted(
                 (r for r in self.tables.get("resume_chunks", []) if r["resume_id"] == params["filter_resume_id"]),

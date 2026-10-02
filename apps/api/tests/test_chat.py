@@ -17,12 +17,12 @@ def stored(monkeypatch):
     """Patches the DB-facing helpers; returns the messages appended."""
     appended: list[dict] = []
 
-    async def fake_append(conversation_id, role, content, provider=None):
-        appended.append({"role": role, "content": content, "provider": provider})
-        return {}
+    async def fake_append(conversation_id, user_id, user_text, assistant_text, provider):
+        appended.append({"role": "user", "content": user_text, "provider": None})
+        appended.append({"role": "assistant", "content": assistant_text, "provider": provider})
 
     monkeypatch.setattr(service, "_require_owned_conversation", lambda *a, **kw: _async_none())
-    monkeypatch.setattr(service, "_append_message", fake_append)
+    monkeypatch.setattr(service, "_append_exchange", fake_append)
     monkeypatch.setattr(
         service.chat_repo,
         "list_messages",
@@ -134,7 +134,7 @@ async def test_history_sent_to_the_model_is_windowed(monkeypatch):
 
     monkeypatch.setattr(service, "_require_owned_conversation", owned)
     monkeypatch.setattr(service.chat_repo, "list_messages", listing)
-    monkeypatch.setattr(service, "_append_message", append)
+    monkeypatch.setattr(service, "_append_exchange", append)
     monkeypatch.setattr(service.gateway, "stream", fake_stream)
 
     async for _ in service.stream_reply("u", "c", "gemini", "hello"):

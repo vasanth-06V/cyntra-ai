@@ -237,3 +237,58 @@ async def test_failover_notification_failure_discards_a_successful_reply(client,
     # the assistant message is never stored. Should degrade silently instead.
     assistant = [m for m in env.db.rows("chat_messages", conversation_id=conv) if m["role"] == "assistant"]
     assert len(assistant) == 1  # the reply survives a failed notification
+
+
+async def test_a_second_send_while_a_reply_is_streaming_gets_a_409_not_a_second_call(client, env, monkeypatch):
+    import asyncio
+
+    from app.chat import service
+    from app.llm import gateway
+
+    seed_key(env, USER_A, "gemini", "primary", "gem-key")
+    conv = await _new_conversation(client)
+    gate = asyncio.Event()
+    started = 0
+
+    async def slow_stream(user_id, provider, messages, options=None):
+        nonlocal started
+        started += 1
+        yield "first "
+        await gate.wait()
+        yield "reply"
+
+    monkeypatch.setattr(gateway, "stream", slow_stream)
+    body = {"provider": "gemini", "content": "hello"}
+    first = asyncio.create_task(client.post(f"/chat/conversations/{conv}/messages", json=body, headers=as_user(USER_A)))
+    while started == 0:
+        await asyncio.sleep(0.01)
+    second = await client.post(f"/chat/conversations/{conv}/messages", json=body, headers=as_user(USER_A))
+    assert second.status_code == 409 and second.json()["error"]["code"] == "reply_in_progress"
+    gate.set()
+    assert (await first).text == "first reply"
+    assert started == 1 and service._replies_in_flight == set()
+    # and once it is done, sending again works
+    again = await client.post(f"/chat/conversations/{conv}/messages", json=body, headers=as_user(USER_A))
+    assert again.status_code == 200
+
+
+async def test_the_exchange_is_stored_atomically_and_in_order(client, env):
+    seed_key(env, USER_A, "gemini", "primary", "gem-key")
+    conv = await _new_conversation(client)
+    await client.post(f"/chat/conversations/{conv}/messages",
+                      json={"provider": "gemini", "content": "q"}, headers=as_user(USER_A))
+    assert [n for n, _ in env.db.rpc_calls].count("append_chat_exchange") == 1
+    rows = env.db.rows("chat_messages", conversation_id=conv)
+    assert [r["role"] for r in rows] == ["user", "assistant"]
+
+
+async def test_a_failed_save_stores_neither_message(client, env):
+    from postgrest.exceptions import APIError
+
+    seed_key(env, USER_A, "gemini", "primary", "gem-key")
+    conv = await _new_conversation(client)
+    env.db.fail_on[("chat_messages", "insert")] = APIError({"message": "boom", "code": "XX000", "details": None, "hint": None})
+    r = await client.post(f"/chat/conversations/{conv}/messages",
+                          json={"provider": "gemini", "content": "q"}, headers=as_user(USER_A))
+    assert r.status_code == 200  # the user still saw the reply
+    assert env.db.rows("chat_messages", conversation_id=conv) == []  # no orphaned user message

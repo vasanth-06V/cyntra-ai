@@ -42,10 +42,12 @@ async def list_messages(user_id: str, conversation_id: str, limit: int = DEFAULT
     return await chat_repo.list_messages(conversation_id, limit)
 
 
-async def _append_message(
-    conversation_id: str, role: str, content: str, provider: str | None = None
-) -> dict:
-    return await chat_repo.append_message(conversation_id, role, content, provider)
+_append_exchange = chat_repo.append_exchange
+
+# One reply at a time per conversation (per process). A double-click or a retry
+# while the first reply is still streaming gets a clear 409 instead of a second
+# paid LLM call and two interleaved answers.
+_replies_in_flight: set[str] = set()
 
 
 def _row_to_message(row: dict) -> Message:
@@ -60,28 +62,39 @@ async def stream_reply(
     the LLM gateway (which owns key failover, transient-error retry, rate
     limiting and usage -- see llm/gateway.py), and persists both messages once
     the reply has completed."""
-    await _require_owned_conversation(user_id, conversation_id)
-
-    # Only the window the model will see is fetched, not the whole history.
-    history_rows = await chat_repo.list_messages(conversation_id, _MAX_HISTORY_MESSAGES)
-
-    messages = [_row_to_message(row) for row in history_rows]
-    messages.append(Message(role=MessageRole.USER, content=user_content))
-    messages = ensure_user_first(fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0))
-
-    collected: list[str] = []
+    if conversation_id in _replies_in_flight:
+        raise AppError(
+            status.HTTP_409_CONFLICT,
+            "reply_in_progress",
+            "The previous reply is still being written -- one moment.",
+        )
+    _replies_in_flight.add(conversation_id)
     try:
-        async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):
-            collected.append(chunk)
-            yield chunk
+        await _require_owned_conversation(user_id, conversation_id)
+
+        # Only the window the model will see is fetched, not the whole history.
+        history_rows = await chat_repo.list_messages(conversation_id, _MAX_HISTORY_MESSAGES)
+
+        messages = [_row_to_message(row) for row in history_rows]
+        messages.append(Message(role=MessageRole.USER, content=user_content))
+        messages = ensure_user_first(fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0))
+
+        collected: list[str] = []
+        try:
+            async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):
+                collected.append(chunk)
+                yield chunk
+        finally:
+            # Saved on every exit once the user has seen any text -- completion, a
+            # mid-stream provider error, or the client disconnecting -- so what
+            # they read is what is in the history. A send that failed before the
+            # first word saves nothing, so a retry can't duplicate the message.
+            if collected:
+                try:
+                    await _append_exchange(
+                        conversation_id, user_id, user_content, "".join(collected), provider
+                    )
+                except Exception:
+                    logger.warning("Could not save the chat exchange", exc_info=True)
     finally:
-        # Saved on every exit once the user has seen any text -- completion, a
-        # mid-stream provider error, or the client disconnecting -- so what
-        # they read is what is in the history. A send that failed before the
-        # first word saves nothing, so a retry can't duplicate the message.
-        if collected:
-            try:
-                await _append_message(conversation_id, "user", user_content)
-                await _append_message(conversation_id, "assistant", "".join(collected), provider)
-            except Exception:
-                logger.warning("Could not save the chat exchange", exc_info=True)
+        _replies_in_flight.discard(conversation_id)

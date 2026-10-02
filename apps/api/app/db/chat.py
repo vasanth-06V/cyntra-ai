@@ -62,6 +62,27 @@ async def list_messages(conversation_id: str, limit: int | None = None) -> list[
     return data if limit is None else list(reversed(data))
 
 
+async def append_exchange(
+    conversation_id: str, user_id: str, user_text: str, assistant_text: str, provider: str
+) -> None:
+    """Both messages of an exchange in ONE transaction (rpc append_chat_exchange)."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.rpc(
+            "append_chat_exchange",
+            {
+                "p_conversation_id": conversation_id,
+                "p_user_id": user_id,
+                "p_user_text": user_text,
+                "p_assistant_text": assistant_text,
+                "p_provider": provider,
+            },
+        ).execute()
+
+    await run(_q)
+
+
 async def append_message(
     conversation_id: str, role: str, content: str, provider: str | None = None
 ) -> dict:
