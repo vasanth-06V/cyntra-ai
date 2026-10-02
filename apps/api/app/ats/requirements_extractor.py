@@ -1,7 +1,5 @@
-import json
-import re
-
 from app.llm import gateway
+from app.llm.json_utils import extract_json
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
 
@@ -24,13 +22,7 @@ Job description:
 """
 
 
-def _extract_json(text: str) -> dict:
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        raise ValueError("No JSON object found in the model's response")
-    return json.loads(match.group(0))
+_extract_json = extract_json  # kept importable for existing callers/tests
 
 
 async def extract_requirements(user_id: str, provider: str, jd_text: str) -> dict:

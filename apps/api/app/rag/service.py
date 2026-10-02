@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import HTTPException, status
 
@@ -7,7 +8,30 @@ from app.core.storage import download_bytes
 from app.keys.service import get_key_row
 from app.rag.chunking import chunk_text
 from app.llm import gateway
+from app.llm.budget import truncate
+from app.llm.options import LLMOptions
+from app.llm.prompts.resume import DIGEST_PROMPT
+from app.providers.base import Message, MessageRole
 from app.rag.parsing import extract_text
+
+logger = logging.getLogger(__name__)
+
+_DIGEST_OPTIONS = LLMOptions(task="extract", max_output_tokens=300, temperature=0.2)
+_DIGEST_INPUT_TOKENS = 1500
+
+
+async def _make_digest(user_id: str, text: str) -> str | None:
+    """One short call that distills the resume for later interviews. Optional:
+    a failure here must never fail resume processing."""
+    try:
+        prompt = DIGEST_PROMPT.format(resume_text=truncate(text, _DIGEST_INPUT_TOKENS))
+        digest = await gateway.complete(
+            user_id, "gemini", [Message(role=MessageRole.USER, content=prompt)], _DIGEST_OPTIONS
+        )
+        return digest.strip() or None
+    except Exception:
+        logger.warning("Resume digest failed; continuing without it", exc_info=True)
+        return None
 
 
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
@@ -54,10 +78,12 @@ async def process_resume(user_id: str, resume_id: str) -> int:
 
     embeddings = await gateway.embed(user_id, chunks)
 
+    digest = await _make_digest(user_id, text)
+
     supabase = get_supabase()
 
     def _store():
-        supabase.table("resumes").update({"parsed_text": text}).eq("id", resume_id).execute()
+        supabase.table("resumes").update({"parsed_text": text, "digest": digest}).eq("id", resume_id).execute()
         supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
         supabase.table("resume_chunks").insert(
             [

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InterviewProviderName(str, Enum):
@@ -40,7 +40,7 @@ class InterviewOut(BaseModel):
 
 
 class SubmitTurnRequest(BaseModel):
-    content: str
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class TurnResponse(BaseModel):

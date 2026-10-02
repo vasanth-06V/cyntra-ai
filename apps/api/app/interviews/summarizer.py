@@ -2,81 +2,57 @@ import asyncio
 
 from app.core.db import get_supabase
 from app.llm import gateway
+from app.llm.budget import truncate
 from app.llm.options import LLMOptions
+from app.llm.prompts.interview import SUMMARY_PROMPT
 from app.providers.base import Message, MessageRole
 
-_OPTIONS = LLMOptions(task="summarize", max_output_tokens=250, temperature=0.2)
+_OPTIONS = LLMOptions(task="summarize", max_output_tokens=150, temperature=0.2)
 
-SUMMARIZE_EVERY_N_TURNS = 6
-
-_SUMMARY_PROMPT = """Summarize the following interview conversation so far in 3-5 \
-sentences, capturing what topics/questions have been covered and how the \
-candidate has performed, so this summary can replace the full transcript in \
-future context. Be factual and concise.
-
-Previous summary (if any): {previous_summary}
-
-Full conversation so far:
-{turns_text}
-"""
+SUMMARIZE_EVERY_N_TURNS = 8
+_TURN_TOKEN_CAP = 150
 
 
-async def maybe_update_summary(interview_id: str, user_id: str, provider: str) -> None:
-    """Keeps token usage flat as an interview gets long (Section 8.3): every
-    SUMMARIZE_EVERY_N_TURNS turns, collapse the transcript into a running
-    summary so future LLM calls use summary + recent turns instead of the
-    full history."""
+async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> None:
+    """Keeps token usage flat as an interview gets long: once
+    SUMMARIZE_EVERY_N_TURNS turns have piled up since the last summary, fold
+    only those new turns into the running summary (never the whole
+    transcript again). `interview` is the row already loaded by the caller."""
+    interview_id = interview["id"]
+    through = interview.get("summarized_through_turn") or 0
     supabase = get_supabase()
 
-    def _count_turns():
+    def _fetch_new_turns():
         return (
             supabase.table("interview_transcripts")
-            .select("id", count="exact")
+            .select("turn_index, speaker, text")
             .eq("interview_id", interview_id)
-            .execute()
-        )
-
-    count_result = await asyncio.to_thread(_count_turns)
-    turn_count = count_result.count or 0
-    if turn_count == 0 or turn_count % SUMMARIZE_EVERY_N_TURNS != 0:
-        return
-
-    def _fetch_turns():
-        return (
-            supabase.table("interview_transcripts")
-            .select("speaker, text")
-            .eq("interview_id", interview_id)
+            .gte("turn_index", through)
             .order("turn_index")
             .execute()
         )
 
-    def _fetch_interview():
-        return (
-            supabase.table("interviews")
-            .select("running_summary")
-            .eq("id", interview_id)
-            .maybe_single()
-            .execute()
-        )
+    result = await asyncio.to_thread(_fetch_new_turns)
+    turns = result.data or []
+    if len(turns) < SUMMARIZE_EVERY_N_TURNS:
+        return
 
-    turns_result, interview_result = await asyncio.gather(
-        asyncio.to_thread(_fetch_turns), asyncio.to_thread(_fetch_interview)
+    turns_text = "\n".join(
+        f"{t['speaker']}: {truncate(t['text'], _TURN_TOKEN_CAP)}" for t in turns
     )
-
-    turns_text = "\n".join(f"{t['speaker']}: {t['text']}" for t in turns_result.data)
-    previous_summary = (interview_result.data or {}).get("running_summary") or "none"
-
-    prompt = _SUMMARY_PROMPT.format(previous_summary=previous_summary, turns_text=turns_text)
+    prompt = SUMMARY_PROMPT.format(
+        previous=interview.get("running_summary") or "none", turns=turns_text
+    )
     summary = await gateway.complete(
         user_id, provider, [Message(role=MessageRole.USER, content=prompt)], _OPTIONS
     )
 
+    fields = {
+        "running_summary": summary.strip(),
+        "summarized_through_turn": turns[-1]["turn_index"] + 1,
+    }
+
     def _store():
-        return (
-            supabase.table("interviews")
-            .update({"running_summary": summary.strip()})
-            .eq("id", interview_id)
-            .execute()
-        )
+        return supabase.table("interviews").update(fields).eq("id", interview_id).execute()
 
     await asyncio.to_thread(_store)

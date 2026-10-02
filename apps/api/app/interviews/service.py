@@ -9,14 +9,32 @@ from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase
 from app.interviews.types import get_config
 from app.keys.service import get_key_row
 from app.llm import gateway
+from app.llm.budget import fit_to_budget, truncate
+from app.llm.json_utils import extract_json
 from app.llm.options import LLMOptions
+from app.llm.prompts.interview import (
+    SETUP_PROMPT,
+    TURN_SYSTEM,
+    goal_for,
+    question_index_for,
+)
 from app.providers.base import Message, MessageRole
 from app.rag.retrieval import match_question_bank, match_resume_chunks
 
-MAX_RAW_TURNS_IN_CONTEXT = 8
+MAX_RAW_TURNS_IN_CONTEXT = 6
 
-_OPENING_OPTIONS = LLMOptions(task="interview", max_output_tokens=250)
-_TURN_OPTIONS = LLMOptions(task="interview", max_output_tokens=200)
+_SETUP_OPTIONS = LLMOptions(
+    task="interview", json_mode=True, max_output_tokens=450, temperature=0.7
+)
+_TURN_OPTIONS = LLMOptions(task="interview", max_output_tokens=160)
+
+_JD_SETUP_TOKENS = 1200
+_JD_FALLBACK_TOKENS = 300
+_BRIEF_MAX_TOKENS = 300
+_RESUME_FALLBACK_TOKENS = 400
+_TURN_TOKEN_CAP = 120
+_QUESTION_TOKEN_CAP = 400
+_PROMPT_BUDGET_TOKENS = 1200
 
 
 async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
@@ -25,7 +43,7 @@ async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
     def _query():
         return (
             supabase.table("resumes")
-            .select("id, parsed_text")
+            .select("id, parsed_text, digest")
             .eq("id", resume_id)
             .eq("user_id", user_id)
             .maybe_single()
@@ -150,6 +168,22 @@ async def _recent_turns(interview_id: str, limit: int) -> list[dict]:
     return list(reversed(result.data))
 
 
+async def _get_question_text(question_id: str) -> str | None:
+    supabase = get_supabase()
+
+    def _query():
+        return (
+            supabase.table("question_bank")
+            .select("question")
+            .eq("id", question_id)
+            .maybe_single()
+            .execute()
+        )
+
+    result = await asyncio.to_thread(_query)
+    return (result.data or {}).get("question") if result else None
+
+
 def _elapsed_minutes(interview: dict) -> float:
     started_at = datetime.fromisoformat(interview["started_at"])
     return (datetime.now(UTC) - started_at).total_seconds() / 60
@@ -180,27 +214,43 @@ async def start_interview(
             )
             selected_question_ids = [m["id"] for m in matches]
 
-        relevant_chunks = await match_resume_chunks(resume_id, jd_embedding, match_count=3)
-        resume_context = (
-            "\n\n".join(c["content"] for c in relevant_chunks)
-            or (resume["parsed_text"] or "")[:2000]
-        )
+        resume_context = resume.get("digest")
+        if not resume_context:
+            relevant_chunks = await match_resume_chunks(resume_id, jd_embedding, match_count=3)
+            resume_context = truncate(
+                "\n\n".join(c["content"] for c in relevant_chunks)
+                or (resume["parsed_text"] or ""),
+                _RESUME_FALLBACK_TOKENS,
+            )
 
-        opening_prompt = (
-            f"{config.system_prompt}\n\n"
-            f"Candidate's relevant resume context:\n{resume_context}\n\n"
-            f"Job description:\n{jd_text}\n\n"
-            "Write a brief, friendly opening greeting (2-3 sentences) introducing "
-            "yourself as the interviewer and asking your first question for the "
-            "opening phase. Respond with only what you would say out loud -- no "
-            "labels, no stage directions."
+        setup_prompt = SETUP_PROMPT.format(
+            type_line=config.system_prompt,
+            goal=goal_for(config.phases[0][0]),
+            resume=resume_context,
+            jd=truncate(jd_text, _JD_SETUP_TOKENS),
         )
-        opening_message = await gateway.complete(
+        raw = await gateway.complete(
             user_id,
             provider,
-            [Message(role=MessageRole.USER, content=opening_prompt)],
-            _OPENING_OPTIONS,
+            [Message(role=MessageRole.USER, content=setup_prompt)],
+            _SETUP_OPTIONS,
         )
+        try:
+            data = extract_json(raw)
+            opening_message = str(data["opening"]).strip()
+            brief = str(data.get("brief") or "").strip()
+            if not opening_message:
+                raise ValueError("empty opening")
+        except (ValueError, KeyError, TypeError):
+            # The model ignored the format: use its text as the greeting and
+            # build the brief without another call.
+            opening_message = raw.strip()
+            brief = ""
+        if not brief:
+            brief = truncate(
+                f"{truncate(jd_text, 150)}\nCandidate: {resume_context}", _BRIEF_MAX_TOKENS
+            )
+        brief = truncate(brief, _BRIEF_MAX_TOKENS)
 
         now = datetime.now(UTC)
         ends_at = now + timedelta(minutes=config.total_minutes)
@@ -213,9 +263,10 @@ async def start_interview(
                 "started_at": now.isoformat(),
                 "ends_at": ends_at.isoformat(),
                 "selected_question_ids": selected_question_ids,
+                "brief": brief,
             },
         )
-        await _append_transcript(interview_id, 0, "ai", opening_message.strip())
+        await _append_transcript(interview_id, 0, "ai", opening_message)
     except Exception:
         await _update_interview(interview_id, {"status": "aborted"})
         raise
@@ -241,11 +292,23 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     turn_index = await _next_turn_index(interview_id)
     await _append_transcript(interview_id, turn_index, "user", content)
 
-    resume = await _get_owned_processed_resume(user_id, interview["resume_id"])
-    system_text = (
-        f"{config.system_prompt}\n\n"
-        f"Job description:\n{interview['jd_text']}\n\n"
-        f"Current interview phase: {current_phase}."
+    question_block = ""
+    question_ids = interview.get("selected_question_ids") or []
+    if config.needs_coding_platform and question_ids:
+        index = min(question_index_for(current_phase), len(question_ids) - 1)
+        question_text = await _get_question_text(question_ids[index])
+        if question_text:
+            question_block = (
+                f"\nCurrent question: {truncate(question_text, _QUESTION_TOKEN_CAP)}"
+            )
+
+    brief = interview.get("brief") or truncate(interview.get("jd_text") or "", _JD_FALLBACK_TOKENS)
+    system_text = TURN_SYSTEM.format(
+        type_line=config.system_prompt,
+        phase=current_phase,
+        goal=goal_for(current_phase),
+        brief=brief,
+        question=question_block,
     )
     messages = [Message(role=MessageRole.SYSTEM, content=system_text)]
     if interview.get("running_summary"):
@@ -255,17 +318,19 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
                 content=f"Summary of the interview so far: {interview['running_summary']}",
             )
         )
+    leading = len(messages)
 
     recent = await _recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT)
     for turn in recent:
         role = MessageRole.ASSISTANT if turn["speaker"] == "ai" else MessageRole.USER
-        messages.append(Message(role=role, content=turn["text"]))
+        messages.append(Message(role=role, content=truncate(turn["text"], _TURN_TOKEN_CAP)))
+    messages = fit_to_budget(messages, _PROMPT_BUDGET_TOKENS, keep_leading=leading)
 
     ai_reply = await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
     ai_reply = ai_reply.strip()
 
     await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)
-    await summarizer.maybe_update_summary(interview_id, user_id, interview["provider"])
+    await summarizer.maybe_update_summary(interview, user_id, interview["provider"])
 
     return {
         "message": ai_reply,

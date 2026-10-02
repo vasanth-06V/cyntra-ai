@@ -427,4 +427,14 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 
 ---
 
-*(Next entry: step 4 of the LLM architecture plan (interview diet), once the user says to continue.)*
+### [2026-10-02] LLM architecture step 4 -- interview diet
+
+**Action**: Migration `0018_interview_diet.sql` (columns `interviews.brief`, `interviews.summarized_through_turn`, `resumes.digest`) -- confirmed present in the live DB via `information_schema` (a re-apply reported "already exists"). New: `llm/json_utils.py::extract_json` (`_extract_json` kept as an alias in `requirements_extractor`), `llm/prompts/interview.py` (setup / turn / summary templates, phase goals, `question_index_for`), `llm/prompts/resume.py`. Interview start is now one embed + one JSON-mode call returning `{brief, opening}`, with a fallback when the model ignores the format; the brief (<=300 tokens) is stored. Each turn sends: type line + phase goal + brief + (coding types) the current question + incremental summary + last 6 turns truncated, fit to 1,200 tokens, reply capped at 160 tokens and "<=3 sentences". The unused resume fetch is removed; answers capped at 4,000 chars. Summarizer is incremental (only turns since `summarized_through_turn`, every 8 new turns, <=80-word update). Resume digest generated once in `process_resume` (non-fatal on failure).
+
+**Why**: the full JD (~400-1,000 tokens) was resent every turn and the summarizer resent the whole transcript; later turns also never saw the candidate or the selected question.
+
+**Result**: 131 mocked tests pass (9 new in `tests/test_interview_diet.py`: prompt-budget cap, exactly 1 LLM call per turn, setup = 1 embed + 1 LLM, JSON fallback, question injection, incremental summary window, digest non-fatal). Deviations from the plan: phase goals live in one dict rather than per type module; no persisted `current_question_index` (derived from the phase). Not verified live.
+
+**Problems faced**: my first edit script wrote real newlines into string literals (SyntaxError caught by pytest collection); fixed. Tool permission denials earlier in the session delayed applying the migration.
+
+*(Next entry: step 5 -- ATS diet.)*
