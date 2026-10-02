@@ -3,6 +3,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import Enum
 
+from app.llm.options import LLMOptions, Usage
+
 
 class MessageRole(str, Enum):
     SYSTEM = "system"
@@ -39,22 +41,35 @@ class ProviderAdapter(ABC):
     orchestration code (chat, interviews, ATS scoring) never has to branch
     on provider identity directly."""
 
+    # Provider key used to look the model up in llm.models.
+    name: str
+
     @abstractmethod
     async def validate(self, api_key: str) -> bool:
-        """Sends a minimal request to confirm the key works. Returns False
-        for an invalid key; raises ProviderRateLimitError if the provider
-        itself is rate-limited (distinct from an invalid key)."""
+        """Cheaply confirms the key works. Returns False for an invalid key;
+        raises ProviderRateLimitError if the provider itself is rate-limited
+        (distinct from an invalid key)."""
 
     @abstractmethod
     async def chat(
-        self, api_key: str, messages: list[Message], stream: bool = True
+        self,
+        api_key: str,
+        messages: list[Message],
+        stream: bool = True,
+        options: LLMOptions | None = None,
+        usage: Usage | None = None,
     ) -> AsyncIterator[str]:
-        """Yields response text chunks."""
+        """Yields response text chunks. If `usage` is given it is filled with
+        the provider-reported token counts once the response completes."""
+
+    async def embed_many(
+        self, api_key: str, texts: list[str], usage: Usage | None = None
+    ) -> list[list[float]]:
+        """Embeds a whole list in as few requests as the provider allows.
+        Only the Gemini adapter implements this -- the RAG layer always
+        routes embeddings through Gemini regardless of the user's chat
+        provider (Section 6.1 of the plan)."""
+        raise NotImplementedError(f"{type(self).__name__} does not support embeddings")
 
     async def embed(self, api_key: str, text: str) -> list[float]:
-        """Only meaningfully implemented by the Gemini adapter -- the RAG
-        layer always routes embedding calls through Gemini regardless of
-        the user's chat-provider choice (see Section 6.1 of the plan)."""
-        raise NotImplementedError(
-            f"{type(self).__name__} does not support embeddings"
-        )
+        return (await self.embed_many(api_key, [text]))[0]

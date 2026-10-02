@@ -1,7 +1,11 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator
+from functools import lru_cache
 
 import google.generativeai as genai
+from google.ai import generativelanguage as glm
+from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import (
     DeadlineExceeded,
     InternalServerError,
@@ -12,6 +16,8 @@ from google.api_core.exceptions import (
     Unauthenticated,
 )
 
+from app.llm.models import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, model_for
+from app.llm.options import LLMOptions, Usage
 from app.providers.base import (
     Message,
     MessageRole,
@@ -22,47 +28,83 @@ from app.providers.base import (
 )
 
 _TRANSIENT_ERRORS = (ServiceUnavailable, InternalServerError, DeadlineExceeded)
+_EMBED_BATCH_SIZE = 100  # the SDK splits larger lists itself; this is for usage counting
 
-# "-latest" aliases track Google's current model rather than a pinned
-# version: the pinned gemini-1.5-flash this originally used was retired and
-# broke key validation outright (a 404 surfaced as a 500 on first live use).
+
+# Per-key clients, never the SDK's process-global default.
 #
-# The *lite* alias on purpose: measured live, gemini-flash-latest takes
-# 6-7s to the first token (it's a "thinking" model) vs ~0.9s for
-# gemini-flash-lite-latest. Chat -- and especially the voice interviews --
-# need low latency more than maximum depth.
-_MODEL_NAME = "gemini-flash-lite-latest"
+# genai.configure(api_key=...) mutates global state and the SDK builds its
+# client lazily from it on the first request. With two users calling at once,
+# one request could be sent with the *other* user's key -- billing the wrong
+# person under BYOK. Building the client explicitly from the caller's key
+# removes the shared state. (Cached per key; each is bound to the event loop
+# that first used it, which is the single uvicorn loop in production.)
+@lru_cache(maxsize=32)
+def _generative_client(api_key: str) -> glm.GenerativeServiceAsyncClient:
+    return glm.GenerativeServiceAsyncClient(client_options=ClientOptions(api_key=api_key))
 
-# text-embedding-004 is gone; gemini-embedding-001 is the current model.
-# It returns 3072 dims by default, so it's requested at 768 to match the
-# vector(768) columns in the schema (cosine distance is scale-invariant, so
-# the truncated vectors are fine for similarity search).
-_EMBEDDING_MODEL = "models/gemini-embedding-001"
-EMBEDDING_DIMENSIONS = 768
+
+@lru_cache(maxsize=32)
+def _model_client(api_key: str) -> glm.ModelServiceClient:
+    return glm.ModelServiceClient(client_options=ClientOptions(api_key=api_key))
 
 
 def _to_gemini_contents(messages: list[Message]) -> tuple[str | None, list[dict]]:
     """Gemini has no 'system' role on messages -- system instructions are
-    passed separately to the model constructor. Returns
+    passed separately to the model constructor. Several system messages are
+    joined rather than the last one silently winning. Returns
     (system_instruction, contents)."""
-    system_instruction = None
+    system_parts: list[str] = []
     contents: list[dict] = []
     for m in messages:
         if m.role == MessageRole.SYSTEM:
-            system_instruction = m.content
+            system_parts.append(m.content)
             continue
         role = "model" if m.role == MessageRole.ASSISTANT else "user"
         contents.append({"role": role, "parts": [m.content]})
-    return system_instruction, contents
+    return ("\n\n".join(system_parts) or None), contents
+
+
+def _generation_config(options: LLMOptions) -> dict:
+    config: dict = {}
+    if options.max_output_tokens is not None:
+        config["max_output_tokens"] = options.max_output_tokens
+    if options.temperature is not None:
+        config["temperature"] = options.temperature
+    if options.json_mode:
+        config["response_mime_type"] = "application/json"
+    return config
+
+
+def _record_usage(usage: Usage | None, response) -> None:
+    if usage is None:
+        return
+    usage.requests += 1
+    meta = getattr(response, "usage_metadata", None)
+    if meta is not None:
+        usage.input_tokens += getattr(meta, "prompt_token_count", 0) or 0
+        usage.output_tokens += getattr(meta, "candidates_token_count", 0) or 0
+
+
+def _build_model(api_key: str, model_name: str, system_instruction: str | None):
+    model = genai.GenerativeModel(model_name, system_instruction=system_instruction)
+    # Public API gives no way to pass a client; the SDK only builds its
+    # global default when this is None. A canary test guards that this
+    # private attribute still behaves that way after an SDK upgrade.
+    model._async_client = _generative_client(api_key)
+    return model
 
 
 class GeminiAdapter(ProviderAdapter):
+    name = "gemini"
+
     async def validate(self, api_key: str) -> bool:
+        """Lists models instead of generating text: it checks the key without
+        spending any of the daily generation quota."""
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(_MODEL_NAME)
-            await model.generate_content_async(
-                "hi", generation_config={"max_output_tokens": 5}
+            client = _model_client(api_key)
+            await asyncio.to_thread(
+                lambda: next(iter(genai.list_models(page_size=1, client=client)), None)
             )
             return True
         except (PermissionDenied, Unauthenticated, InvalidArgument):
@@ -75,20 +117,32 @@ class GeminiAdapter(ProviderAdapter):
             raise ProviderUnavailableError(str(exc)) from exc
 
     async def chat(
-        self, api_key: str, messages: list[Message], stream: bool = True
+        self,
+        api_key: str,
+        messages: list[Message],
+        stream: bool = True,
+        options: LLMOptions | None = None,
+        usage: Usage | None = None,
     ) -> AsyncIterator[str]:
-        genai.configure(api_key=api_key)
+        options = options or LLMOptions()
         system_instruction, contents = _to_gemini_contents(messages)
-        model = genai.GenerativeModel(_MODEL_NAME, system_instruction=system_instruction)
+        model = _build_model(api_key, model_for(self.name, options.task), system_instruction)
+        config = _generation_config(options) or None
 
         try:
             if stream:
-                response = await model.generate_content_async(contents, stream=True)
+                response = await model.generate_content_async(
+                    contents, stream=True, generation_config=config
+                )
                 async for chunk in response:
                     if chunk.text:
                         yield chunk.text
+                _record_usage(usage, response)
             else:
-                response = await model.generate_content_async(contents)
+                response = await model.generate_content_async(
+                    contents, generation_config=config
+                )
+                _record_usage(usage, response)
                 yield response.text
         except (PermissionDenied, Unauthenticated) as exc:
             raise ProviderAuthError(str(exc)) from exc
@@ -97,19 +151,32 @@ class GeminiAdapter(ProviderAdapter):
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
 
-    async def embed(self, api_key: str, text: str) -> list[float]:
-        genai.configure(api_key=api_key)
+    async def embed_many(
+        self, api_key: str, texts: list[str], usage: Usage | None = None
+    ) -> list[list[float]]:
+        """One request per 100 texts (the SDK batches a list itself and
+        returns {"embedding": [[...], ...]}), instead of one per text."""
+        if not texts:
+            return []
         try:
-            result = await asyncio.to_thread(
-                genai.embed_content,
-                model=_EMBEDDING_MODEL,
-                content=text,
+            result = await genai.embed_content_async(
+                model=EMBEDDING_MODEL,
+                content=texts,
                 output_dimensionality=EMBEDDING_DIMENSIONS,
+                client=_generative_client(api_key),
             )
-            return result["embedding"]
         except (PermissionDenied, Unauthenticated) as exc:
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
+
+        embeddings = result["embedding"]
+        if len(embeddings) != len(texts):
+            raise ValueError(
+                f"Embedding count mismatch: sent {len(texts)} texts, got {len(embeddings)} vectors"
+            )
+        if usage is not None:
+            usage.requests += math.ceil(len(texts) / _EMBED_BATCH_SIZE)
+        return embeddings
