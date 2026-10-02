@@ -1,6 +1,7 @@
 import logging
 
 from app.db import usage as usage_repo
+from app.llm.keystate import quota_day
 from app.llm.options import Usage
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ async def record(
         "p_requests": usage.requests or 1,
         "p_input": usage.input_tokens or est_input_tokens,
         "p_output": usage.output_tokens or est_output_tokens,
+        "p_thought": usage.thought_tokens,
+        "p_day": quota_day(provider).isoformat(),
     }
 
     try:

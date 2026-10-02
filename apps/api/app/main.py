@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -5,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ats.router import router as ats_router
 from app.chat.router import router as chat_router
+from app.core import background
 from app.core.config import settings, validate_config
 from app.core.errors import install_error_handlers
 from app.core.jsonlog import setup_logging
@@ -24,6 +26,11 @@ async def lifespan(_: FastAPI):
     # Fail at boot, with a readable list, rather than on the first request.
     validate_config()
     yield
+    # Let in-flight housekeeping (summaries, digests) finish rather than drop it.
+    try:
+        await asyncio.wait_for(background.drain(), timeout=8)
+    except TimeoutError:
+        pass
 
 
 # The interactive docs/schema are for development only.

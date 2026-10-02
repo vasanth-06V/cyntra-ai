@@ -11,15 +11,15 @@ async def record_usage(params: dict) -> None:
     await run(_q)
 
 
-async def usage_for_day(user_id: str, day: str) -> list[dict]:
+async def usage_for_days(user_id: str, days: list[str]) -> list[dict]:
     supabase = get_supabase()
 
     def _q():
         return (
             supabase.table("llm_usage")
-            .select("provider, kind, requests, input_tokens, output_tokens")
+            .select("provider, kind, day, requests, input_tokens, output_tokens, thought_tokens")
             .eq("user_id", user_id)
-            .eq("day", day)
+            .in_("day", days)
             .execute()
         )
 

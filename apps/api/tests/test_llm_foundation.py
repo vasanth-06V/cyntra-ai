@@ -119,3 +119,17 @@ def test_schemas_coerce_sloppy_model_output():
 
     with pytest.raises(ValidationError):
         SetupOut.model_validate({"brief": "x", "opening": "   "})
+
+
+def test_gemini_quota_day_is_the_pacific_day_and_others_use_utc():
+    from datetime import UTC, datetime
+
+    from app.llm.keystate import quota_day, seconds_until_pacific_midnight
+
+    # 03:00 UTC on Oct 2 is still Oct 1 in Pacific time (UTC-7 in summer)
+    moment = datetime(2026, 10, 2, 3, 0, tzinfo=UTC)
+    assert quota_day("gemini", moment).isoformat() == "2026-10-01"
+    assert quota_day("groq", moment).isoformat() == "2026-10-02"
+    assert quota_day("claude", moment).isoformat() == "2026-10-02"
+    # 21 hours until Pacific midnight at 03:00 UTC / 20:00 Pacific -> 4 hours
+    assert abs(seconds_until_pacific_midnight(moment) - 4 * 3600) < 5

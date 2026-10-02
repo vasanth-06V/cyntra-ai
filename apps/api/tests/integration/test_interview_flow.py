@@ -5,6 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.core import background
+
 from app.providers.base import ProviderBlockedError, ProviderUnavailableError
 
 from .conftest import USER_A, USER_B, as_user, new_id, seed_key, seed_processed_resume
@@ -213,6 +215,7 @@ async def test_incremental_summary_kicks_in_after_enough_turns_and_feeds_next_pr
         t = await client.post(f"/interviews/{iid}/turns", json={"content": f"answer {i}"},
                               headers=as_user(USER_A))
         assert t.status_code == 200
+    await background.drain()  # the summary is housekeeping that runs after the reply
     tasks = [c.options.task for c in keyed.gemini.chat_calls]
     assert tasks.count("summarize") == 1
     row = keyed.db.rows("interviews", id=iid)[0]

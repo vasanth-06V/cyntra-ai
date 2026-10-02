@@ -103,6 +103,10 @@ class _Query:
         self._filters.append(("gte", col, val))
         return self
 
+    def in_(self, col, values):
+        self._filters.append(("in", col, list(values)))
+        return self
+
     def order(self, col, desc=False, **_):
         self._order = (col, bool(desc))
         return self
@@ -137,6 +141,8 @@ class _Query:
         for op, col, val in self._filters:
             have = row.get(col)
             if op == "eq" and have != val:
+                return False
+            if op == "in" and have not in val:
                 return False
             if op == "gte" and not (have is not None and have >= val):
                 return False
@@ -281,7 +287,7 @@ class FakeSupabase:
             ]
         if name == "record_llm_usage":
             usage = self.tables.setdefault("llm_usage", [])
-            day = datetime.now(UTC).date().isoformat()
+            day = params.get("p_day") or datetime.now(UTC).date().isoformat()
             for r in usage:
                 if (r["user_id"], r["provider"], r["kind"], r["day"]) == (
                     params["p_user_id"], params["p_provider"], params["p_kind"], day
@@ -289,11 +295,13 @@ class FakeSupabase:
                     r["requests"] += params["p_requests"]
                     r["input_tokens"] += params["p_input"]
                     r["output_tokens"] += params["p_output"]
+                    r["thought_tokens"] = r.get("thought_tokens", 0) + params.get("p_thought", 0)
                     return None
             usage.append({
                 "user_id": params["p_user_id"], "provider": params["p_provider"],
                 "kind": params["p_kind"], "day": day, "requests": params["p_requests"],
                 "input_tokens": params["p_input"], "output_tokens": params["p_output"],
+                "thought_tokens": params.get("p_thought", 0),
             })
             return None
         raise AssertionError(f"unexpected rpc {name}")

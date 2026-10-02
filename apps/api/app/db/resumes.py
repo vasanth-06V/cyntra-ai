@@ -52,6 +52,15 @@ async def replace_chunks_and_finish(
     await run(_q)
 
 
+async def set_digest(resume_id: str, digest: str) -> None:
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("resumes").update({"digest": digest}).eq("id", resume_id).execute()
+
+    await run(_q)
+
+
 async def match_resume_chunks(
     resume_id: str, query_embedding: list[float], match_count: int = 5
 ) -> list[dict]:

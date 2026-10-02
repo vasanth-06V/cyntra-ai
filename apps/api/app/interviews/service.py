@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import status
 
+from app.core import background
 from app.core.errors import AppError
 from app.db import interviews as interviews_repo
 from app.db import resumes as resumes_repo
@@ -277,12 +278,14 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     turn_index = await _next_turn_index(interview_id)
     await _append_transcript(interview_id, turn_index, "user", content)
     await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)
-    try:
-        await summarizer.maybe_update_summary(interview, user_id, interview["provider"])
-    except Exception:
-        # The reply is already saved and shown; a failed summary (quota, outage)
-        # just means it is retried on a later turn -- it must not fail this one.
-        logger.warning("Interview summary update failed", exc_info=True)
+    # Folding old turns into the running summary is housekeeping: it runs in
+    # the background so it adds no latency to this turn, and a failure (quota,
+    # outage) just means it is retried after a later turn.
+    background.schedule(
+        summarizer.maybe_update_summary(interview, user_id, interview["provider"]),
+        name=f"summary:{interview_id}",
+        key=f"summary:{interview_id}",
+    )
 
     return {
         "message": ai_reply,

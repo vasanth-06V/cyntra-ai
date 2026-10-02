@@ -3,6 +3,8 @@
 import io
 
 import pytest
+
+from app.core import background
 from botocore.exceptions import ClientError
 from docx import Document
 from postgrest.exceptions import APIError
@@ -54,6 +56,7 @@ async def test_process_resume_parses_chunks_embeds_and_stores_digest(client, env
     assert r.status_code == 200
     body = r.json()
     assert body["resume_id"] == resume["id"] and body["chunk_count"] >= 2
+    await background.drain()  # the digest is made after the resume is already usable
 
     chunks = env.db.rows("resume_chunks", resume_id=resume["id"])
     assert len(chunks) == body["chunk_count"]

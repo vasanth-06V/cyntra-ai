@@ -9,7 +9,7 @@ provider enforces too.) The key itself is never stored or logged.
 
 import hashlib
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 
@@ -26,6 +26,18 @@ def seconds_until_pacific_midnight(now: datetime | None = None) -> float:
         pacific = now.astimezone(UTC) - timedelta(hours=8)
     tomorrow = (pacific + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     return max(60.0, (tomorrow - pacific).total_seconds())
+
+
+def quota_day(provider: str, now: datetime | None = None) -> date:
+    """The calendar day a provider's *daily* quota is counted in: Gemini resets
+    at midnight Pacific; the others are booked to the UTC day."""
+    now = now or datetime.now(UTC)
+    if provider == "gemini":
+        try:
+            return now.astimezone(ZoneInfo("America/Los_Angeles")).date()
+        except Exception:
+            return (now.astimezone(UTC) - timedelta(hours=8)).date()
+    return now.astimezone(UTC).date()
 
 
 class KeyCooldowns:

@@ -9,6 +9,7 @@ interface UsageRow {
   requests: number;
   input_tokens: number;
   output_tokens: number;
+  thought_tokens?: number;
 }
 
 export function UsageToday() {
@@ -25,7 +26,10 @@ export function UsageToday() {
 
   return (
     <div className="rounded-lg border border-border p-4">
-      <h2 className="text-sm font-medium">Used today (UTC)</h2>
+      <h2 className="text-sm font-medium">Used today</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Gemini&apos;s daily quota resets at midnight Pacific time.
+      </p>
       {rows.length === 0 ? (
         <p className="mt-1 text-sm text-muted-foreground">No requests yet today.</p>
       ) : (
@@ -35,7 +39,7 @@ export function UsageToday() {
               <span className="capitalize">{r.provider}</span>{" "}
               {r.kind === "embed" ? "embeddings" : "chat"}: {r.requests} request
               {r.requests === 1 ? "" : "s"} · {r.input_tokens.toLocaleString()} in /{" "}
-              {r.output_tokens.toLocaleString()} out tokens
+              {r.output_tokens.toLocaleString()} out tokens{r.thought_tokens ? ` (+${r.thought_tokens.toLocaleString()} thinking)` : ""}
             </li>
           ))}
         </ul>

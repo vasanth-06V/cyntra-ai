@@ -3,6 +3,7 @@ import logging
 
 from fastapi import HTTPException, status
 
+from app.core import background
 from app.core.errors import AppError
 
 from app.core.storage import download_bytes
@@ -52,6 +53,12 @@ async def _make_digest(user_id: str, text: str) -> str | None:
         return None
 
 
+async def _store_digest(user_id: str, resume_id: str, text: str) -> None:
+    digest = await _make_digest(user_id, text)
+    if digest:
+        await resumes_repo.set_digest(resume_id, digest)
+
+
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
     return await resumes_repo.require_resume(user_id, resume_id, "id, file_key")
 
@@ -98,11 +105,17 @@ async def process_resume(user_id: str, resume_id: str) -> int:
 
     embeddings = await gateway.embed(user_id, chunks)
 
-    digest = await _make_digest(user_id, text)
-
     rows = [
         {"resume_id": resume_id, "chunk_index": i, "content": chunk, "embedding": embedding}
         for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
     ]
-    await resumes_repo.replace_chunks_and_finish(resume_id, rows, text, digest)
+    await resumes_repo.replace_chunks_and_finish(resume_id, rows, text, None)
+
+    # The digest only speeds up later interviews (they fall back to the chunks
+    # without it), so it is made after the resume is already usable.
+    background.schedule(
+        _store_digest(user_id, resume_id, text),
+        name=f"digest:{resume_id}",
+        key=f"digest:{resume_id}",
+    )
     return len(chunks)

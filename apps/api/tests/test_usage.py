@@ -2,6 +2,7 @@ import pytest
 
 from app.db import usage as usage_repo
 from app.llm import usage
+from app.llm.keystate import quota_day
 from app.llm.options import Usage
 
 
@@ -38,7 +39,10 @@ async def test_records_provider_reported_counts(monkeypatch):
         "p_requests": 1,
         "p_input": 120,
         "p_output": 30,
+        "p_thought": 0,
+        "p_day": params["p_day"],
     }
+    assert params["p_day"] == quota_day("gemini").isoformat()
 
 
 @pytest.mark.asyncio
@@ -73,7 +77,7 @@ async def test_a_bookkeeping_failure_never_breaks_the_users_request(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_usage_today_filters_by_user_and_day(monkeypatch):
+async def test_usage_today_filters_by_user_and_each_providers_own_quota_day(monkeypatch):
     from app.llm import router
 
     seen = {}
@@ -86,9 +90,19 @@ async def test_usage_today_filters_by_user_and_day(monkeypatch):
             seen[field] = value
             return self
 
+        def in_(self, field, values):
+            seen[field] = list(values)
+            return self
+
         def execute(self):
+            gemini_day, utc_day = quota_day("gemini").isoformat(), quota_day("groq").isoformat()
+
             class R:
-                data = [{"provider": "gemini", "kind": "chat", "requests": 3}]
+                data = [
+                    {"provider": "gemini", "kind": "chat", "day": gemini_day, "requests": 3},
+                    {"provider": "gemini", "kind": "chat", "day": "2000-01-01", "requests": 99},  # not "today"
+                    {"provider": "groq", "kind": "chat", "day": utc_day, "requests": 5},
+                ]
 
             return R()
 
@@ -101,5 +115,7 @@ async def test_usage_today_filters_by_user_and_day(monkeypatch):
 
     rows = await router.usage_today("u1")
 
-    assert rows[0]["requests"] == 3
-    assert seen["table"] == "llm_usage" and seen["user_id"] == "u1" and "day" in seen
+    assert sorted((r["provider"], r["requests"]) for r in rows) == [("gemini", 3), ("groq", 5)]
+    assert all("day" not in r for r in rows)
+    assert seen["table"] == "llm_usage" and seen["user_id"] == "u1"
+    assert quota_day("gemini").isoformat() in seen["day"]
