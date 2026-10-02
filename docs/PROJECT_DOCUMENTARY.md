@@ -332,4 +332,99 @@ This confirms two things: the sign-up code itself is wired correctly end-to-end 
 
 ---
 
-*(Next entry: Phase 7 (coding platform) or live end-to-end testing, whichever comes first once credentials are provided.)*
+### [2026-10-02] First live run: credentials, Google sign-in, and two auth bugs found only by running it for real
+
+**Action**:
+1. The user supplied the Supabase service-role key and JWT secret; both were written into `apps/api/.env` (gitignored) and checked against the live project (service role could read the DB; the JWT secret matched the signature on the project's anon key). The user enabled the Google provider in Supabase and set Authentication -> URL Configuration (Site URL `http://localhost:3000`, Redirect URL `http://localhost:3000/**`) **by hand**: Claude in Chrome was not connected and the built-in browser was not signed in to Supabase, and credentials are never typed by the assistant. Cloudflare R2 credentials are still **not** provided.
+2. The user's first real sign-in reached onboarding and then failed with "Invalid or expired token". The DB confirmed the first half worked (profile created, role = `owner` via the trigger). Diagnosis took two steps because the first fix was necessary but not sufficient:
+   - **Bug 1 -- token algorithm.** The project signs user session tokens with an asymmetric **ES256** key published at `/auth/v1/.well-known/jwks.json`; the backend only accepted the legacy HS256 shared secret. The earlier "secret works" check had only proved the anon key (still HS256) verified. Fixed in `core/security.py`: tokens are verified against the cached JWKS public key (looked up by `kid`, refetched once on an unknown `kid` to survive rotation), with HS256 kept as a fallback (commit `25dfaf8`).
+   - **Bug 2 -- settings silently empty.** `config.py` loaded `.env` relative to the process working directory. The preview launcher starts uvicorn from the **repo root**, so `apps/api/.env` was never found and every setting (Supabase URL, service key, JWT secret) was blank -- which broke the JWKS URL. Every earlier manual check had run from inside `apps/api`, which is why none caught it. Fixed by anchoring the path to the file's own location (`Path(__file__).resolve().parents[2] / ".env"`), plus a log line recording *why* a bearer token was rejected (exception only, never the token) -- that log line is what exposed the real cause (commit `a870a5a`).
+   - Method worth remembering: to debug an auth failure without asking the user to paste tokens, read the session cookie from the browser pane with `javascript_tool`, inspect only the **header and non-secret claims** (alg, kid, aud, exp), and replay the request from the page while reading the API log.
+3. Gemini key onboarding then failed (generic "Something went wrong"). Backend log: `models/gemini-1.5-flash is not found` -- Google had retired the model the key check used. Listing the models the live key could use showed `text-embedding-004` was gone too (only `gemini-embedding-001` / `gemini-embedding-2*` remain). Fixes (commit `245863e`): `gemini-flash-lite-latest` alias instead of a pinned version; embeddings via `gemini-embedding-001` at `output_dimensionality=768` so they still fit the `vector(768)` columns (cosine distance is scale-invariant, so the truncated vectors are fine); Google reports a bad key as `InvalidArgument` ("API key not valid"), not an auth error, so `validate()` now treats that as an invalid key; Claude adapter model ids updated. The browser showed only a generic message because an error raised from the backend's outermost error middleware carries no CORS headers, so the browser reports an opaque network failure.
+4. First live chat hit a Google **503 "model is currently experiencing high demand"** (it succeeded on a plain retry), and was slow. Fixes (commit `847fbfe`): new `ProviderUnavailableError` (distinct from a rate limit: rate limit -> try the backup key; unavailable -> short retry then a clear message); chat retries twice with backoff but **only before any output has been produced** (retrying afterwards would repeat text the user already saw), then returns a readable 503; the chat router now pulls the first chunk *before* starting the HTTP stream, so pre-stream failures become real JSON errors with the right status instead of a broken stream. Measured live: `gemini-flash-latest` is a "thinking" model, 6-7s to first token (19s end to end with the retry) vs ~0.9s for `gemini-flash-lite-latest`; switched to lite -> chat replies in 1.5-3s.
+5. Verified live with the user's real signed-in session: Google sign-in, account setup, Owner role, onboarding, Gemini key stored as an encrypted Fernet token (not plaintext, `is_valid = true`), streamed chat with persisted messages and follow-ups that use the history. The user confirmed "chat works".
+
+**Why**: This was the first time the code ran against real credentials, real Google OAuth, and a real provider; the unit tests (all mocked) could not have found any of the above.
+
+**Result**: Auth, onboarding, BYOK key storage and streaming chat are verified end to end. Resume upload, ATS scoring and interviews are **not** live-tested yet (they need Cloudflare R2, which needs credentials).
+
+**Problems faced**: Both auth bugs were hidden behind each other and behind my own earlier checks passing for the wrong reason -- the lesson is that a check that passes in a different environment (working directory, token type) than production proves nothing; reproduce in the real launch path.
+
+---
+
+### [2026-10-02] Working rule: no live LLM-provider calls (free-tier quota is tiny)
+
+**Action**: After live chat worked, the user asked that the assistant stop running anything against the Gemini API. Saved as a durable rule (memory file `feedback_no_live_provider_calls.md`): never call a provider with the user's stored keys for testing, probing, or benchmarking; verify with **mocked unit tests, tsc, eslint, and curl against endpoints that return before reaching a provider** (e.g. 401 checks); if something can only be confirmed with a real call, say so and ask the user to try it in the UI. Reading/writing Supabase is fine -- only provider traffic is off-limits.
+
+**Quota facts** (from the user's AI Studio rate-limit page; free tier, **per Google Cloud project, not per key** -- a second key in the *same* project adds no quota; a backup key only helps if it comes from a different project):
+
+| Model | RPM | TPM | RPD |
+|---|---|---|---|
+| Gemini 3.8 Flash (`gemini-flash-latest`) | 5 | 250K | **20** |
+| Gemini 3.5 Flash Lite (`gemini-flash-lite-latest`) | 15 | 250K | **500** |
+| Gemini 3.1 Flash Lite | 15 | 250K | 500 |
+| Gemini Embedding 1/2 | 100 | 30K | 1,000 |
+| Gemma 4 26B / 31B | 30 | 16K | 14,400 |
+| Gemini 2.x models | 0 | 0 | 0 (not on the free tier) |
+| Live API models (e.g. Gemini 3.8 Live) | unlimited | 65K | unlimited |
+
+The "20 requests/day" the user felt was the *non-lite* model's limit, which my early probes had used 12 of; the lite model now in use allows 500/day. Real users bring their own keys, so the low free tier constrains *testing*, not the product -- but every user is on some quota, which is why request/token economy is treated as a product feature (next entry).
+
+---
+
+### [2026-10-02] LLM architecture & token-lean prompts -- plan approved; steps 1-3 implemented, step 4 NOT started
+
+**The plan** (approved; full text at `C:\Users\vakat\.claude\plans\structured-booping-stroustrup.md`): all model traffic goes through one **LLM gateway**; prompts are short, structured and capped; embeddings are batched; usage is recorded and shown in-app.
+
+**Audit that motivated it** (file references are pre-change): embeddings were one request per item (`rag/embeddings.py`, `ats/service.py`: ~8 per resume, ~20 per ATS run); the full JD was re-sent on every interview turn (`interviews/service.py` submit_turn); the resume context and selected questions were fetched but never used after the opening message (a quality gap, not just waste); the summarizer re-sent the whole transcript; chat sent unbounded history; no output caps or temperature control; JSON extraction via prose + regex; key validation spent a generation request; retry/failover was duplicated per feature; nothing recorded usage.
+
+**Implemented (all committed; 122 backend tests passing, every one mocked):**
+
+- **Step 1 -- commit `c3cedb7`.** New `app/llm/`: `options.py` (`LLMOptions(task, max_output_tokens, temperature, json_mode)`, `Usage`), `budget.py` (`estimate_tokens` = chars/4 with no API call, `truncate`, `fit_to_budget`), `models.py` (task -> model per provider; **the one place to fix a retired model**; Gemini = lite alias for every task; Claude fast tier = haiku-4-5 for extract/summarize/validate, strong = sonnet-5; Groq fast = llama-3.1-8b-instant, strong = llama-3.3-70b-versatile -- **Claude/Groq names unverified live**). Adapters accept `options`, fill a `Usage` with provider-reported tokens; Gemini `validate()` now *lists models* (spends no generation quota); new `embed_many()` (one request per 100 texts -- confirmed from the SDK source that a list input returns `{"embedding": [[...], ...]}`). Two real bugs fixed on the way: (a) **cross-user key mixing** -- `genai.configure(api_key=...)` is process-global and the SDK builds its client lazily from it, so two concurrent users could have one request sent with the other's key (billing the wrong person under BYOK); the Gemini adapter now builds a per-key client (`lru_cache`d) and sets the model's private `_async_client`, guarded by a canary test that fails loudly if an SDK upgrade changes that internal; (b) with several SYSTEM messages Gemini/Claude kept only the **last**, so the interview's running-summary message was silently *replacing* the main instructions -- they are now joined.
+- **Step 2 -- commit `d95aef5`.** `rag/embeddings.py::embed_texts()` (replaces `embed_chunks`) sends the whole list as one request, truncating each text to a safe input size. Resume processing ~8 requests -> 1; ATS ~20 -> 1 (per-keyword resume lookups are plain DB queries and now run concurrently). Tests pin the request counts.
+- **Step 3 -- commit `c04cbdc`.** `llm/gateway.py` with `complete()`, `stream()`, `embed()`: pipeline per call = limiter -> adapter -> transient retry -> backup-key failover -> usage record. Errors are always `HTTPException`: 412 no key, 429 quota/both keys/local limit, 503 provider overloaded after retries, 400 key rejected. Never retries or fails over once output has started streaming. `llm/limiter.py` (per-user sliding-window RPM: gemini 12, gemini:embed 80, claude 40, groq 25; waits up to 20s then 429; process-local, fine for one instance). `llm/usage.py` + **migration 0017** (applied): `llm_usage(user_id, provider, kind chat|embed, day, requests, input_tokens, output_tokens)` with owner-select RLS and an atomic `record_llm_usage()` executable **only by the service role** (verified); provider-reported tokens preferred, estimates as fallback, request count always exact, bookkeeping errors never fail the user's request. Embeddings now fail over to the backup key too (they never did). Output caps + temperatures set per task; extraction runs in JSON mode at temperature 0. Removed: `ats/llm_utils.py`, chat's private retry helper, `keys.call_with_failover` / `BothKeysFailedError`. Chat, ATS, interviews, summarizer, question bank and resume processing all go through the gateway. Test suite reorganized accordingly (`test_gateway.py`, `test_limiter.py`, `test_usage.py`; `test_keys.py` retired, its cases moved into the gateway suite).
+
+**Prompt rules** (to be enforced by a prompts registry and by budget tests): static prefix first, dynamic content last; imperative and terse (role + constraints + format <= ~120 tokens); send only the *current phase's* instruction; cap output twice (say it in the prompt **and** set `max_output_tokens`); provider JSON mode instead of prose instructions (keep the fence-stripping parser as fallback); never resend what is already distilled (JD -> brief, old turns -> summary, resume -> digest); truncate user-supplied text to a budget.
+
+**Remaining steps (not yet done):**
+
+- **Step 4 -- interview diet. NOT started. Migration 0018 was proposed and the user *declined that tool call* (they wanted context saved first) -- it is neither applied nor written to disk; do not apply it until the user says to continue.** Proposed 0018 SQL: `alter table interviews add column brief text; alter table interviews add column summarized_through_turn int not null default 0; alter table resumes add column digest text;` (run advisors afterwards). Design to implement:
+  1. `llm/json_utils.py::extract_json` (move `_extract_json` out of `ats/requirements_extractor.py`; keep a `_extract_json` alias there because `test_requirements_extractor.py` imports that name).
+  2. `llm/prompts/{__init__,interview,resume}.py`: `setup_prompt`, `turn_system`, `summary_prompt`, resume-digest prompt.
+  3. Add `PHASE_GOALS` (one short sentence per phase) to each of the 8 `interviews/types/*.py`, expose via `InterviewTypeConfig.phase_goals`; add a helper mapping phase -> question index for coding-platform types (`problem_N` -> N-1; `coding` -> 0).
+  4. `start_interview`: **one** structured call (JSON mode, ~450 output cap) returning `{"brief","opening"}` from: type line + first-phase goal + JD truncated to ~1,200 tokens + the resume **digest** (fallback: best-matching chunks truncated). Store the brief (truncated ~300 tokens) in `interviews.brief`. If the JSON can't be parsed: opening = raw text, brief = deterministic (first ~600 chars of JD + digest).
+  5. `submit_turn`: system = `turn_system(type line, phase, phase goal, brief [fallback: JD truncated ~300 tokens], current question text for coding types truncated ~400 tokens)`; optional separate summary system message; last **6** turns each truncated ~120 tokens; `fit_to_budget(~1,200)`; output cap ~160 tokens and the prompt says "<=3 sentences, one question, no preamble"; **delete the unused resume fetch**; update `current_question_index` when the phase changes; cap answer length at 4,000 chars in `SubmitTurnRequest`.
+  6. Summarizer becomes **incremental**: pass in `running_summary` + `summarized_through_turn` from the already-loaded interview; fetch only turns with `turn_index >= summarized_through_turn`; run when >= 8 new turns; prompt "update in <= 80 words"; truncate each turn ~150 tokens; store the summary and `summarized_through_turn = last_index + 1`.
+  7. `rag/service.process_resume`: after chunk/embed/store, one `gateway.complete(..., "gemini", task="extract", max 300)` producing `resumes.digest` from the resume text truncated ~1,500 tokens; **failure must be non-fatal** (log, leave digest null).
+  8. Tests to add: prompt-budget regression (worst-case JD/transcript/answers stays under a fixed token cap), request counts (a turn = exactly 1 LLM call; setup = 1 embed + 1 LLM), incremental-summary window math, question injection, brief fallback, non-fatal digest failure.
+- **Step 5 -- ATS diet:** move ATS prompts into `llm/prompts/ats.py`; in-process TTL cache of extracted requirements keyed by `(user_id, sha256(JD))` (memory only, so the "no ATS history persisted" decision still holds); truncate the JD to a budget. ATS feedback stays automatic (an opt-in button would save 1 request/run -- user can veto).
+- **Step 6 -- chat window + visibility:** chat history window (last ~10 messages or ~2,000 tokens via `fit_to_budget`; no extra LLM call, rolling summary deferred); `GET /usage` endpoint reading `llm_usage` and a small "Used today" line under Settings -> API Keys; `tsc` + `eslint`.
+- After step 6: add an "LLM gateway" section to `docs/IMPLEMENTATION.md` (it currently describes the pre-gateway design), and re-run both Supabase advisors.
+
+**Expected effect (estimates from chars/4, not measured):** resume processing ~8 -> 1 embed (+1 digest call once); ATS ~20 embeds + 2 LLM -> 1 embed + 2 LLM (1 with a cache hit); interview turn input ~1,400 -> ~800 tokens with the summary updated incrementally; chat input bounded instead of growing. At ~35 requests per 30-exchange interview the 500/day lite quota covers roughly a dozen interviews a day. Real numbers will come from `llm_usage` once it is surfaced in the UI.
+
+**Problems faced / findings**: none blocking. Supabase's security advisor now also reports **"Leaked Password Protection Disabled"** (an Auth setting, unrelated to any migration of ours; it concerns the password users set after Google sign-in and the temporary demo sign-up) -- the user's dashboard to toggle if they want it; it may require a paid plan. Not acted on.
+
+---
+
+### [2026-10-02] STATE SNAPSHOT -- read this first when resuming
+
+**Where we are**: Phases 1-6 of the 10-phase plan are built and committed (Phase 6 = text-mode interview orchestration). On top of that, the LLM-architecture work (steps 1-3 above) is done; step 4 is next. Phases 7 (coding platform: Monaco + Judge0), 8 (voice), 9 (reports, 7-day expiry), 10 (polish) are not started.
+
+**Verified live (with real credentials)**: Google sign-in -> account setup -> Owner role -> onboarding -> encrypted Gemini key -> streaming chat. **Not verified live**: resume upload / R2, resume processing, ATS scoring, interview setup and turns, the question-bank admin UI, Groq and Claude (no keys), and the batched `embed_many()` against Google (confirmed from SDK source only). The user will exercise these in the UI.
+
+**Credentials status**: Supabase service-role key + JWT secret in `apps/api/.env` (gitignored); Gemini key stored (encrypted) for the Owner account; Google OAuth enabled in Supabase; **Cloudflare R2 not set up** (needed for resumes -> ATS -> interviews); no Groq/Claude keys. Secrets are never written into docs or memory.
+
+**Backend tests**: 122 passing (`cd apps/api && source venv/Scripts/activate && python -m pytest -q`), all mocked. Frontend: `npx tsc --noEmit` and `npx eslint .` clean as of the last frontend change (nothing frontend changed since the chat error-handling fix).
+
+**Commits since Phase 6** (newest first): `c04cbdc` gateway, `d95aef5` embedding batching, `c3cedb7` LLM foundation, `847fbfe` transient-error handling + lite model, `245863e` retired Gemini models + invalid-key handling, `a870a5a` anchored `.env` + rejection logging, `25dfaf8` JWKS/ES256 verification. Working tree was clean at the time of this snapshot.
+
+**Open items / decisions parked with the user**: R2 credentials; optionally a Groq key (and a second Gemini key from a *different* Google project) for quota headroom; the temporary demo sign-up (`app/(auth)/sign-up`, link on sign-in) must be **deleted before launch** once Google sign-in is the only path (it is); the "Leaked Password Protection" advisory; the four plan defaults the user may veto (resume digest on, ATS feedback automatic, `llm_usage` on, chat window-only); Phase 8 should *evaluate Gemini Live-API models* (unlimited RPM/RPD on the free tier, token-capped) before committing to per-turn STT + chat + TTS.
+
+**How to run locally**: `.claude/launch.json` defines `web` (Next.js on :3000) and `api` (uvicorn on :8000, launched from the **repo root** with `--app-dir apps/api` -- which is exactly why the `.env` path had to be anchored). Start via the Browser pane's `preview_start`. The api server has no auto-reload: restart it after backend edits.
+
+**Pointers**: plan files `C:\Users\vakat\.claude\plans\structured-booping-stroustrup.md` (LLM architecture) and `docs/IMPLEMENTATION.md` (original 10-phase plan); Supabase project ref `erdsnljuppltvmvivugv` (region ap-south-1); migrations live in `apps/api/migrations/` (0001-0017 applied; 0018 pending as described).
+
+---
+
+*(Next entry: step 4 of the LLM architecture plan (interview diet), once the user says to continue.)*
