@@ -7,6 +7,8 @@ from fastapi import Header, HTTPException, status
 from jose import JWTError, jwt
 
 from app.core.config import settings
+from app.core.context import set_user_id
+from app.core.errors import AppError
 
 
 def _fernet() -> Fernet:
@@ -22,9 +24,10 @@ def decrypt_key(encrypted_key: str) -> str:
         return _fernet().decrypt(encrypted_key.encode()).decode()
     except InvalidToken as exc:
         # e.g. the server's encryption secret changed since the key was saved.
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="Your saved API key can't be read -- please re-enter it in Settings -> API Keys.",
+        raise AppError(
+            status.HTTP_412_PRECONDITION_FAILED,
+            "key_unreadable",
+            "Your saved API key can't be read -- please re-enter it in Settings -> API Keys.",
         ) from exc
 
 
@@ -128,4 +131,5 @@ async def get_current_user(authorization: str = Header(default="")) -> Authentic
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token missing subject claim",
         )
+    set_user_id(user_id)
     return AuthenticatedUser(user_id=user_id, email=payload.get("email"))

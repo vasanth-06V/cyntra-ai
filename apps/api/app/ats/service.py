@@ -2,6 +2,8 @@ import asyncio
 
 from fastapi import HTTPException, status
 
+from app.core.errors import AppError
+
 from app.ats.feedback import generate_feedback
 from app.ats.requirements_extractor import extract_requirements
 from app.ats.scorer import composite_score, formatting_score, keyword_score, missing_terms
@@ -28,10 +30,7 @@ async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
     if not result or not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
     if not result.data.get("parsed_text"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="This resume hasn't finished processing yet",
-        )
+        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "resume_not_processed", "This resume hasn't finished processing yet")
     return result.data
 
 
@@ -58,10 +57,7 @@ async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str
     # the extraction call had already spent a request.
     gemini_key = await get_key_row(user_id, "gemini", "primary")
     if not gemini_key:
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="A valid primary Gemini key is required to score a resume",
-        )
+        raise AppError(status.HTTP_412_PRECONDITION_FAILED, "key_missing", "A valid primary Gemini key is required to score a resume")
 
     requirements = await extract_requirements(user_id, provider, jd_text)
     if not requirements["must_have"] and not requirements["nice_to_have"]:

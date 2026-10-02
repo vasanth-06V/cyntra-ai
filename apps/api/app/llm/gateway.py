@@ -25,6 +25,8 @@ from typing import TypeVar
 
 from fastapi import HTTPException, status
 
+from app.core.errors import AppError
+
 from app.core.security import decrypt_key
 from app.keys.service import get_key_row, notify_user
 from app.llm import usage as usage_log
@@ -65,9 +67,10 @@ async def _notify_failover(user_id: str, provider: str) -> None:
 async def _primary_key(user_id: str, provider: str) -> str:
     row = await get_key_row(user_id, provider, "primary")
     if not row:
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail=f"No {provider} key configured",
+        raise AppError(
+            status.HTTP_412_PRECONDITION_FAILED,
+            "key_missing",
+            f"No {provider} key configured",
         )
     return decrypt_key(row["encrypted_key"])
 
@@ -75,31 +78,35 @@ async def _primary_key(user_id: str, provider: str) -> str:
 async def _backup_key(user_id: str, provider: str) -> str:
     row = await get_key_row(user_id, provider, "backup")
     if not row:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Primary {provider} key is rate-limited and no backup key is configured",
+        raise AppError(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "quota_exhausted",
+            f"Primary {provider} key is rate-limited and no backup key is configured",
         )
     return decrypt_key(row["encrypted_key"])
 
 
 def _overloaded(provider: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"{provider.capitalize()} is temporarily overloaded -- please try again in a moment.",
+    return AppError(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "provider_overloaded",
+        f"{provider.capitalize()} is temporarily overloaded -- please try again in a moment.",
     )
 
 
 def _blocked(provider: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail=f"{provider.capitalize()} declined to answer this -- try rephrasing your message.",
+    return AppError(
+        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        "reply_blocked",
+        f"{provider.capitalize()} declined to answer this -- try rephrasing your message.",
     )
 
 
 def _key_rejected(provider: str) -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Your {provider} key was rejected -- check it in Settings -> API Keys.",
+    return AppError(
+        status.HTTP_400_BAD_REQUEST,
+        "key_rejected",
+        f"Your {provider} key was rejected -- check it in Settings -> API Keys.",
     )
 
 
@@ -131,9 +138,10 @@ async def _with_failover(
             try:
                 result = await _one_key(user_id, bucket, backup, fn)
             except ProviderRateLimitError as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Both primary and backup {provider} keys are rate-limited",
+                raise AppError(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "quota_exhausted",
+                    f"Both primary and backup {provider} keys are rate-limited",
                 ) from exc
             await _notify_failover(user_id, provider)
             return result
@@ -228,9 +236,10 @@ async def stream(
             except ProviderRateLimitError as exc:
                 if chunk_sent:
                     raise
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Both primary and backup {provider} keys are rate-limited",
+                raise AppError(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "quota_exhausted",
+                    f"Both primary and backup {provider} keys are rate-limited",
                 ) from exc
             await _notify_failover(user_id, provider)
     except ProviderUnavailableError as exc:

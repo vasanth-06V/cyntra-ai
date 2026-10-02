@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 
+from app.core.errors import AppError
+
 from app.core.db import get_supabase
 from app.interviews import summarizer
 from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase_for_elapsed
@@ -60,10 +62,7 @@ async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
     if not result or not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
     if not result.data.get("parsed_text"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="This resume hasn't finished processing yet",
-        )
+        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "resume_not_processed", "This resume hasn't finished processing yet")
     return result.data
 
 
@@ -222,10 +221,7 @@ async def start_interview(
 
     gemini_key = await get_key_row(user_id, "gemini", "primary")
     if not gemini_key:
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="A valid primary Gemini key is required to start an interview",
-        )
+        raise AppError(status.HTTP_412_PRECONDITION_FAILED, "key_missing", "A valid primary Gemini key is required to start an interview")
 
     config = get_config(interview_type)
     interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
@@ -303,20 +299,14 @@ async def start_interview(
 async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     interview = await _get_owned_interview(user_id, interview_id)
     if interview["status"] != "in_progress":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Interview is not in progress (status: {interview['status']})",
-        )
+        raise AppError(status.HTTP_409_CONFLICT, "interview_not_active", f"Interview is not in progress (status: {interview['status']})")
 
     config = get_config(interview["type"])
     elapsed = _elapsed_minutes(interview)
     if elapsed > config.total_minutes + _OVERRUN_GRACE_MINUTES:
         # The time box is fixed: close the interview instead of letting it run on.
         await _update_interview(interview_id, {"status": "completed"})
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This interview's time is up and it has been completed.",
-        )
+        raise AppError(status.HTTP_409_CONFLICT, "interview_ended", "This interview's time is up and it has been completed.")
     current_phase = phase_for_elapsed(config, elapsed)
     if current_phase != interview["phase"]:
         await _update_interview(interview_id, {"phase": current_phase})
@@ -393,10 +383,7 @@ async def complete_interview(user_id: str, interview_id: str) -> dict:
     if interview["status"] == "completed":
         return interview
     if interview["status"] != "in_progress":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Only an interview in progress can be completed (status: {interview['status']})",
-        )
+        raise AppError(status.HTTP_409_CONFLICT, "interview_not_active", f"Only an interview in progress can be completed (status: {interview['status']})")
     await _update_interview(interview_id, {"status": "completed"})
     interview["status"] = "completed"
     return interview

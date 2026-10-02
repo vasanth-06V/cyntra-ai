@@ -4,6 +4,8 @@ from collections import deque
 
 from fastapi import HTTPException, status
 
+from app.core.errors import AppError
+
 # Requests per minute per user, deliberately a little under the free-tier
 # caps (Gemini lite 15/min, embeddings 100/min) so a burst queues for a
 # moment instead of being rejected with a 429. Process-local: correct for a
@@ -57,10 +59,7 @@ class RateLimiter:
 
                 wait = _WINDOW_SECONDS - (now - window[0])
                 if waited + wait > self._max_wait:
-                    raise HTTPException(
-                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                        detail="Too many requests in a short time -- please wait a moment.",
-                    )
+                    raise AppError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited", "Too many requests in a short time -- please wait a moment.")
                 await self._sleep(wait)
                 waited += wait
 

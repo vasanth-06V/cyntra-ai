@@ -3,6 +3,8 @@ import logging
 
 from fastapi import HTTPException, status
 
+from app.core.errors import AppError
+
 from app.core.db import get_supabase
 from app.core.storage import download_bytes
 from app.keys.service import get_key_row
@@ -63,10 +65,7 @@ async def process_resume(user_id: str, resume_id: str) -> int:
 
     gemini_key = await get_key_row(user_id, "gemini", "primary")
     if not gemini_key:
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="A valid primary Gemini key is required to process a resume",
-        )
+        raise AppError(status.HTTP_412_PRECONDITION_FAILED, "key_missing", "A valid primary Gemini key is required to process a resume")
 
     try:
         file_bytes = await asyncio.to_thread(download_bytes, resume["file_key"])
