@@ -40,7 +40,26 @@ async def send_message(
     body: SendMessageRequest,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    return StreamingResponse(
-        service.stream_reply(user.user_id, conversation_id, body.provider.value, body.content),
-        media_type="text/plain",
+    replies = service.stream_reply(
+        user.user_id, conversation_id, body.provider.value, body.content
     )
+
+    # Pull the first chunk *before* returning the StreamingResponse. Once a
+    # streaming response has started its 200 status is already sent, so any
+    # failure after that point can only cut the stream off mid-air -- and an
+    # error raised from inside the stream also bypasses CORS, which the
+    # browser reports as an opaque "something went wrong". Failing here
+    # instead (no key, rate limit, provider overloaded) produces a normal
+    # JSON error with the right status and a readable message.
+    try:
+        first_chunk = await replies.__anext__()
+    except StopAsyncIteration:
+        first_chunk = None
+
+    async def body_stream():
+        if first_chunk is not None:
+            yield first_chunk
+        async for chunk in replies:
+            yield chunk
+
+    return StreamingResponse(body_stream(), media_type="text/plain")

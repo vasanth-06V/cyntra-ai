@@ -22,6 +22,14 @@ class ProviderRateLimitError(Exception):
     trigger the primary -> backup key failover."""
 
 
+class ProviderUnavailableError(Exception):
+    """The provider is temporarily overloaded or erroring (HTTP 5xx-style,
+    e.g. Gemini's "model is currently experiencing high demand"). Distinct
+    from a rate limit (the user's key hit its quota -> try the backup key):
+    here the *provider* is struggling, so the right response is a short
+    retry, then a clear "try again" message."""
+
+
 class ProviderAuthError(Exception):
     """Raised when the provider rejects the key itself (invalid/revoked)."""
 

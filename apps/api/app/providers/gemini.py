@@ -3,18 +3,35 @@ from collections.abc import AsyncIterator
 
 import google.generativeai as genai
 from google.api_core.exceptions import (
+    DeadlineExceeded,
+    InternalServerError,
     InvalidArgument,
     PermissionDenied,
     ResourceExhausted,
+    ServiceUnavailable,
     Unauthenticated,
 )
 
-from app.providers.base import Message, MessageRole, ProviderAdapter, ProviderAuthError, ProviderRateLimitError
+from app.providers.base import (
+    Message,
+    MessageRole,
+    ProviderAdapter,
+    ProviderAuthError,
+    ProviderRateLimitError,
+    ProviderUnavailableError,
+)
+
+_TRANSIENT_ERRORS = (ServiceUnavailable, InternalServerError, DeadlineExceeded)
 
 # "-latest" aliases track Google's current model rather than a pinned
 # version: the pinned gemini-1.5-flash this originally used was retired and
 # broke key validation outright (a 404 surfaced as a 500 on first live use).
-_MODEL_NAME = "gemini-flash-latest"
+#
+# The *lite* alias on purpose: measured live, gemini-flash-latest takes
+# 6-7s to the first token (it's a "thinking" model) vs ~0.9s for
+# gemini-flash-lite-latest. Chat -- and especially the voice interviews --
+# need low latency more than maximum depth.
+_MODEL_NAME = "gemini-flash-lite-latest"
 
 # text-embedding-004 is gone; gemini-embedding-001 is the current model.
 # It returns 3072 dims by default, so it's requested at 768 to match the
@@ -54,6 +71,8 @@ class GeminiAdapter(ProviderAdapter):
             return False
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except _TRANSIENT_ERRORS as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     async def chat(
         self, api_key: str, messages: list[Message], stream: bool = True
@@ -75,6 +94,8 @@ class GeminiAdapter(ProviderAdapter):
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except _TRANSIENT_ERRORS as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
 
     async def embed(self, api_key: str, text: str) -> list[float]:
         genai.configure(api_key=api_key)
@@ -90,3 +111,5 @@ class GeminiAdapter(ProviderAdapter):
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except _TRANSIENT_ERRORS as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
