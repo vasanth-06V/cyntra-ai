@@ -1,11 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.keys.models import ProviderName
 
 
 class ScoreRequest(BaseModel):
     resume_id: str
-    jd_text: str
+    jd_text: str = Field(min_length=10, max_length=20000)
     provider: ProviderName
 
 

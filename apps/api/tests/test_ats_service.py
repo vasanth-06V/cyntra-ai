@@ -107,7 +107,7 @@ async def test_score_resume_raises_429_when_extraction_exhausts_both_keys(monkey
 @pytest.mark.asyncio
 async def test_score_resume_raises_429_when_feedback_generation_exhausts_both_keys(monkeypatch):
     async def fake_extract_requirements(user_id, provider, jd_text):
-        return {"must_have": [], "nice_to_have": [], "experience_level": "mid", "title": "Eng"}
+        return {"must_have": ["python"], "nice_to_have": [], "experience_level": "mid", "title": "Eng"}
 
     async def fake_generate_feedback(*args, **kwargs):
         raise HTTPException(status_code=429, detail="both keys rate-limited")

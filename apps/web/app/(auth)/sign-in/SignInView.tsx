@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
-export function SignInView() {
+export function SignInView({ initialError = null }: { initialError?: string | null }) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [emailMode, setEmailMode] = useState(false);
 
   async function signInWithGoogle() {
@@ -55,7 +55,7 @@ export function SignInView() {
               </Button>
 
               {error && (
-                <p className="mt-3 text-sm text-destructive">{error}</p>
+                <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>
               )}
 
               <button

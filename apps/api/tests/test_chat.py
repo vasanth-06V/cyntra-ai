@@ -85,7 +85,7 @@ async def test_gateway_errors_propagate_and_no_assistant_message_is_saved(monkey
         await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
 
     assert exc.value.status_code == 503
-    assert [m["role"] for m in stored] == ["user"]  # the reply was never produced
+    assert stored == []  # nothing is saved for a failed send, so a retry can't duplicate it
 
 
 def test_router_returns_a_real_error_status_instead_of_a_broken_stream(monkeypatch):
@@ -102,7 +102,7 @@ def test_router_returns_a_real_error_status_instead_of_a_broken_stream(monkeypat
     app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser("user-1", "a@b.com")
     try:
         response = TestClient(app).post(
-            "/chat/conversations/c1/messages",
+            "/chat/conversations/11111111-1111-4111-8111-111111111111/messages",
             json={"provider": "gemini", "content": "hi"},
         )
     finally:

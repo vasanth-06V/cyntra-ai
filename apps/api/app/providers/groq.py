@@ -1,7 +1,14 @@
 from collections.abc import AsyncIterator
 
 from groq import AsyncGroq
-from groq import APIConnectionError, AuthenticationError, InternalServerError, RateLimitError
+from groq import (
+    APIConnectionError,
+    AuthenticationError,
+    InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from app.llm.models import model_for
 from app.llm.options import LLMOptions, Usage
@@ -90,10 +97,12 @@ class GroqAdapter(ProviderAdapter):
                 )
                 _record_usage(usage, response)
                 yield response.choices[0].message.content or ""
-        except AuthenticationError as exc:
+        except (AuthenticationError, PermissionDeniedError) as exc:
             raise ProviderAuthError(str(exc)) from exc
         except RateLimitError as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except NotFoundError as exc:
+            raise ProviderUnavailableError(f"model not found: {exc}") from exc
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
 

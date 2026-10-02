@@ -69,3 +69,16 @@ export async function requireRole(role: Role) {
   }
   return { user, role: currentRole };
 }
+
+/**
+ * Page-level permission guard. Owners always pass; admins need the named
+ * permission. Call it at the top of the page itself -- layouts are not
+ * re-run on client-side navigation, so a layout check alone is not a guard.
+ */
+export async function requirePermission(permission: string) {
+  const { user, role, permissions } = await requireUser();
+  if (role !== "owner" && !(role === "admin" && permissions.includes(permission))) {
+    redirect("/");
+  }
+  return { user, role };
+}

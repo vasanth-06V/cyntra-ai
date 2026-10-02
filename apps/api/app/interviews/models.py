@@ -24,7 +24,7 @@ class StartInterviewRequest(BaseModel):
     type: InterviewType
     provider: InterviewProviderName
     resume_id: str
-    jd_text: str
+    jd_text: str = Field(min_length=10, max_length=20000)
 
 
 class InterviewOut(BaseModel):
@@ -60,13 +60,13 @@ class TranscriptEntryOut(BaseModel):
 
 class QuestionIn(BaseModel):
     type: InterviewType
-    question: str
+    question: str = Field(min_length=1, max_length=4000)
     test_cases: list | None = None
     tags: list[str] | None = None
 
 
 class QuestionUpdateIn(BaseModel):
-    question: str | None = None
+    question: str | None = Field(default=None, min_length=1, max_length=4000)
     test_cases: list | None = None
     tags: list[str] | None = None
 

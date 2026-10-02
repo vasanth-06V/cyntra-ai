@@ -64,6 +64,12 @@ async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str
         )
 
     requirements = await extract_requirements(user_id, provider, jd_text)
+    if not requirements["must_have"] and not requirements["nice_to_have"]:
+        # With nothing to match, every sub-score would be a perfect 1.0.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Couldn't find any skills or requirements in that job description -- paste the full posting.",
+        )
 
     kw_score = keyword_score(requirements, resume["parsed_text"])
     sem_score = await _semantic_score(user_id, resume_id, requirements)

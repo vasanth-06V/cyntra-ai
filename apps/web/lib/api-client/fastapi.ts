@@ -10,6 +10,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * FastAPI reports `detail` as a string for our own errors but as an array of
+ * {loc, msg} objects for request-validation (422) errors; turn either into
+ * readable text.
+ */
+function detailMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : ""))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  return fallback;
+}
+
 async function authHeader(): Promise<HeadersInit> {
   const supabase = createClient();
   const {
@@ -33,7 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(res.status, body.detail ?? res.statusText);
+    throw new ApiError(res.status, detailMessage(body.detail, res.statusText || "Request failed"));
   }
 
   if (res.status === 204) {
@@ -60,8 +76,14 @@ async function* streamPost(path: string, body?: unknown): AsyncGenerator<string>
   });
 
   if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new ApiError(res.status, text || res.statusText);
+    const text = await res.text().catch(() => "");
+    let detail: unknown = text;
+    try {
+      detail = JSON.parse(text).detail;
+    } catch {
+      // not JSON -- use the text as-is
+    }
+    throw new ApiError(res.status, detailMessage(detail, res.statusText || "Request failed"));
   }
 
   const reader = res.body.getReader();

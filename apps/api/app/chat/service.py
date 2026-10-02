@@ -122,7 +122,6 @@ async def stream_reply(
     await _require_owned_conversation(user_id, conversation_id)
 
     history_rows = await list_messages(user_id, conversation_id)
-    await _append_message(conversation_id, "user", user_content)
 
     messages = [_row_to_message(row) for row in history_rows[-_MAX_HISTORY_MESSAGES:]]
     messages.append(Message(role=MessageRole.USER, content=user_content))
@@ -133,4 +132,8 @@ async def stream_reply(
         collected.append(chunk)
         yield chunk
 
+    # Both messages are saved only once the reply completed: a failed send
+    # leaves no orphaned user message, so the user's retry doesn't duplicate it
+    # or produce back-to-back user turns in the history.
+    await _append_message(conversation_id, "user", user_content)
     await _append_message(conversation_id, "assistant", "".join(collected), provider)

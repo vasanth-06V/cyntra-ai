@@ -27,6 +27,7 @@ from app.rag.retrieval import match_question_bank, match_resume_chunks
 logger = logging.getLogger(__name__)
 
 MAX_RAW_TURNS_IN_CONTEXT = 6
+_OVERRUN_GRACE_MINUTES = 5
 
 _SETUP_OPTIONS = LLMOptions(
     task="interview", json_mode=True, max_output_tokens=450, temperature=0.7
@@ -309,13 +310,17 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
 
     config = get_config(interview["type"])
     elapsed = _elapsed_minutes(interview)
+    if elapsed > config.total_minutes + _OVERRUN_GRACE_MINUTES:
+        # The time box is fixed: close the interview instead of letting it run on.
+        await _update_interview(interview_id, {"status": "completed"})
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This interview's time is up and it has been completed.",
+        )
     current_phase = phase_for_elapsed(config, elapsed)
     if current_phase != interview["phase"]:
         await _update_interview(interview_id, {"phase": current_phase})
         interview["phase"] = current_phase
-
-    turn_index = await _next_turn_index(interview_id)
-    await _append_transcript(interview_id, turn_index, "user", content)
 
     question_block = ""
     question_ids = interview.get("selected_question_ids") or []
@@ -351,16 +356,22 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         )
     leading = len(messages)
 
-    recent = await _recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT)
+    # The candidate's new answer goes into the prompt but is only *saved* once
+    # the reply succeeded -- otherwise a failed call (429/503) would leave a
+    # dangling answer, and the retry would store it twice.
+    recent = await _recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT - 1)
     for turn in recent:
         role = MessageRole.ASSISTANT if turn["speaker"] == "ai" else MessageRole.USER
         messages.append(Message(role=role, content=truncate(turn["text"], _TURN_TOKEN_CAP)))
+    messages.append(Message(role=MessageRole.USER, content=truncate(content, _TURN_TOKEN_CAP * 4)))
     messages = fit_to_budget(messages, _PROMPT_BUDGET_TOKENS, keep_leading=leading)
     messages = ensure_user_first(messages, leading, placeholder="(interview started)")
 
     ai_reply = await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
     ai_reply = ai_reply.strip()
 
+    turn_index = await _next_turn_index(interview_id)
+    await _append_transcript(interview_id, turn_index, "user", content)
     await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)
     try:
         await summarizer.maybe_update_summary(interview, user_id, interview["provider"])
@@ -379,6 +390,13 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
 
 async def complete_interview(user_id: str, interview_id: str) -> dict:
     interview = await _get_owned_interview(user_id, interview_id)
+    if interview["status"] == "completed":
+        return interview
+    if interview["status"] != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Only an interview in progress can be completed (status: {interview['status']})",
+        )
     await _update_interview(interview_id, {"status": "completed"})
     interview["status"] = "completed"
     return interview

@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { uploadToR2 } from "@/lib/storage";
+import { deleteFromR2, uploadToR2 } from "@/lib/storage";
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx"];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -16,7 +16,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Could not read the upload" }, { status: 400 });
+  }
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
@@ -39,7 +44,24 @@ export async function POST(request: Request) {
   const fileKey = `resumes/${user.id}/${resumeId}.${extension}`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  await uploadToR2(fileKey, buffer, file.type || "application/octet-stream");
+  // The extension is user-controlled; check the file's own signature too.
+  const signature = buffer.subarray(0, 4).toString("latin1");
+  const looksRight = extension === "pdf" ? signature === "%PDF" : signature.startsWith("PK");
+  if (!looksRight) {
+    return NextResponse.json(
+      { error: "That file doesn't look like a valid PDF or DOCX" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await uploadToR2(fileKey, buffer, file.type || "application/octet-stream");
+  } catch {
+    return NextResponse.json(
+      { error: "Could not store the file right now -- please try again." },
+      { status: 502 }
+    );
+  }
 
   const { data: resume, error: insertError } = await supabase
     .from("resumes")
@@ -48,6 +70,8 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError) {
+    // Don't leave an orphaned object behind.
+    await deleteFromR2(fileKey).catch(() => {});
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 

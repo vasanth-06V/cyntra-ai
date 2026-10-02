@@ -10,6 +10,7 @@ from google.api_core.exceptions import (
     DeadlineExceeded,
     InternalServerError,
     InvalidArgument,
+    NotFound,
     PermissionDenied,
     ResourceExhausted,
     ServiceUnavailable,
@@ -159,10 +160,14 @@ class GeminiAdapter(ProviderAdapter):
                         "Gemini returned no text (blocked or empty)"
                     ) from exc
                 yield text
-        except (PermissionDenied, Unauthenticated) as exc:
+        except (PermissionDenied, Unauthenticated, InvalidArgument) as exc:
+            # Google reports a revoked/malformed key as InvalidArgument.
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except NotFound as exc:
+            # e.g. a retired model name -- our configuration, not the user's.
+            raise ProviderUnavailableError(f"model not found: {exc}") from exc
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
 
@@ -180,10 +185,14 @@ class GeminiAdapter(ProviderAdapter):
                 output_dimensionality=EMBEDDING_DIMENSIONS,
                 client=_generative_client(api_key),
             )
-        except (PermissionDenied, Unauthenticated) as exc:
+        except (PermissionDenied, Unauthenticated, InvalidArgument) as exc:
+            # Google reports a revoked/malformed key as InvalidArgument.
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except NotFound as exc:
+            # e.g. a retired model name -- our configuration, not the user's.
+            raise ProviderUnavailableError(f"model not found: {exc}") from exc
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
 

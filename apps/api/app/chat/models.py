@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.keys.models import ProviderName
 
@@ -25,4 +25,4 @@ class ChatMessageOut(BaseModel):
 
 class SendMessageRequest(BaseModel):
     provider: ProviderName
-    content: str
+    content: str = Field(min_length=1, max_length=8000)

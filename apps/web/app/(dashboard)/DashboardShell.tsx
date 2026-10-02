@@ -30,7 +30,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
         <Link href="/dashboard" className="mb-6 px-2 text-lg font-semibold">
           CyntraAI
         </Link>
-        <nav className="flex flex-col gap-1">
+        <nav aria-label="Main" className="flex flex-col gap-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -51,6 +51,21 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
             <SignOutButton />
           </div>
         </header>
+        {/* Below sm the sidebar is hidden, so the same links run as a scrolling bar. */}
+        <nav
+          aria-label="Main"
+          className="flex gap-1 overflow-x-auto border-b border-border px-4 py-2 sm:hidden"
+        >
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="shrink-0 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
         <main className="flex-1 p-6">{children}</main>
       </div>
     </div>

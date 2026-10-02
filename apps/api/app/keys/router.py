@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, status
 
+from app.core.ids import UuidStr
 from app.core.security import AuthenticatedUser, get_current_user
 from app.keys import service
 from app.keys.models import ProviderKeyOut, SubmitKeyRequest
@@ -26,5 +27,5 @@ async def list_keys(user: AuthenticatedUser = Depends(get_current_user)):
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_key(key_id: str, user: AuthenticatedUser = Depends(get_current_user)):
+async def delete_key(key_id: UuidStr, user: AuthenticatedUser = Depends(get_current_user)):
     await service.delete_key(user.user_id, key_id)

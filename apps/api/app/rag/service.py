@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 _DIGEST_OPTIONS = LLMOptions(task="extract", max_output_tokens=300, temperature=0.2)
 _DIGEST_INPUT_TOKENS = 1500
+_MAX_FILE_BYTES = 5 * 1024 * 1024
+_MAX_CHUNKS = 60  # keeps embedding to a single batched request
 
 
 async def _make_digest(user_id: str, text: str) -> str | None:
@@ -66,9 +68,29 @@ async def process_resume(user_id: str, resume_id: str) -> int:
             detail="A valid primary Gemini key is required to process a resume",
         )
 
-    file_bytes = await asyncio.to_thread(download_bytes, resume["file_key"])
-    text = await asyncio.to_thread(extract_text, resume["file_key"], file_bytes)
-    chunks = chunk_text(text)
+    try:
+        file_bytes = await asyncio.to_thread(download_bytes, resume["file_key"])
+    except Exception as exc:
+        missing = "NoSuchKey" in repr(exc) or "404" in repr(exc)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if missing else status.HTTP_502_BAD_GATEWAY,
+            detail="The uploaded file could not be found -- please upload it again."
+            if missing
+            else "Couldn't fetch the file from storage right now -- please retry.",
+        ) from exc
+    if len(file_bytes) > _MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This file is too large to process (max 5MB).",
+        )
+    try:
+        text = await asyncio.to_thread(extract_text, resume["file_key"], file_bytes)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Couldn't read this file -- is it a valid PDF or DOCX?",
+        ) from exc
+    chunks = chunk_text(text)[:_MAX_CHUNKS]
 
     if not chunks:
         raise HTTPException(
@@ -83,7 +105,6 @@ async def process_resume(user_id: str, resume_id: str) -> int:
     supabase = get_supabase()
 
     def _store():
-        supabase.table("resumes").update({"parsed_text": text, "digest": digest}).eq("id", resume_id).execute()
         supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
         supabase.table("resume_chunks").insert(
             [
@@ -95,6 +116,11 @@ async def process_resume(user_id: str, resume_id: str) -> int:
                 }
                 for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
             ]
+        ).execute()
+        # Last, so a failure above leaves the resume "unprocessed" (retryable)
+        # rather than marked processed with no chunks to search.
+        supabase.table("resumes").update({"parsed_text": text, "digest": digest}).eq(
+            "id", resume_id
         ).execute()
 
     await asyncio.to_thread(_store)

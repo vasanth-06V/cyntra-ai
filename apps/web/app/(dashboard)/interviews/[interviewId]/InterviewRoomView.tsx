@@ -27,7 +27,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [minutesRemaining, setMinutesRemaining] = useState(60);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         }
       })
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Could not load this interview.")
+        setLoadError(err instanceof ApiError ? err.message : "Could not load this interview.")
       );
   }, [interviewId]);
 
@@ -67,8 +68,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     try {
       await apiClient.post(`/interviews/${interviewId}/complete`);
       setInterview((prev) => (prev ? { ...prev, status: "completed" } : prev));
-    } catch {
-      // best-effort -- the interview still ran even if this call fails
+    } catch (err) {
+      setSendError(err instanceof ApiError ? err.message : "Could not end the interview.");
     }
   }
 
@@ -77,12 +78,13 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     const content = input.trim();
     if (!content || sending || interview?.status !== "in_progress") return;
 
+    const localId = `local-${Date.now()}`;
     setInput("");
     setSending(true);
-    setError(null);
+    setSendError(null);
     setMessages((prev) => [
       ...prev,
-      { id: `local-${Date.now()}`, role: "user", provider: null, content, created_at: "" },
+      { id: localId, role: "user", provider: null, content, created_at: "" },
     ]);
 
     try {
@@ -105,13 +107,17 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         await handleComplete();
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      // Keep the room; take the unsent bubble back out and restore the draft
+      // so the candidate can retry.
+      setMessages((prev) => prev.filter((m) => m.id !== localId));
+      setInput(content);
+      setSendError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setSending(false);
     }
   }
 
-  if (error) return <p className="p-6 text-sm text-destructive">{error}</p>;
+  if (loadError) return <p role="alert" className="p-6 text-sm text-destructive">{loadError}</p>;
   if (!interview) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
 
   const isActive = interview.status === "in_progress";
@@ -131,7 +137,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         )}
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
@@ -144,6 +150,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Your answer…"
+            aria-label="Your answer"
+            maxLength={4000}
             disabled={sending}
             className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
@@ -160,7 +168,11 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         </div>
       )}
 
-      {error && <p className="px-4 pb-3 text-sm text-destructive">{error}</p>}
+      {sendError && (
+        <p role="alert" className="px-4 pb-3 text-sm text-destructive">
+          {sendError}
+        </p>
+      )}
     </div>
   );
 }

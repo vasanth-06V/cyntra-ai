@@ -8,6 +8,7 @@ from app.chat.models import (
     CreateConversationRequest,
     SendMessageRequest,
 )
+from app.core.ids import UuidStr
 from app.core.security import AuthenticatedUser, get_current_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -29,14 +30,14 @@ async def list_conversations(user: AuthenticatedUser = Depends(get_current_user)
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[ChatMessageOut])
 async def list_messages(
-    conversation_id: str, user: AuthenticatedUser = Depends(get_current_user)
+    conversation_id: UuidStr, user: AuthenticatedUser = Depends(get_current_user)
 ):
     return await service.list_messages(user.user_id, conversation_id)
 
 
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
-    conversation_id: str,
+    conversation_id: UuidStr,
     body: SendMessageRequest,
     user: AuthenticatedUser = Depends(get_current_user),
 ):

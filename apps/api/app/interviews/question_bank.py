@@ -82,7 +82,9 @@ async def create_question(
     return result.data[0]
 
 
-async def list_questions(interview_type: str | None = None) -> list[dict]:
+async def list_questions(user_id: str, interview_type: str | None = None) -> list[dict]:
+    # Test cases are the "answer key"; only people who manage the bank see it.
+    await _require_permission(user_id)
     supabase = get_supabase()
 
     def _query():
@@ -114,6 +116,11 @@ async def update_question(
         updates["test_cases"] = test_cases
     if tags is not None:
         updates["tags"] = tags
+
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Nothing to update"
+        )
 
     supabase = get_supabase()
 

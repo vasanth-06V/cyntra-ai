@@ -1,7 +1,8 @@
 import logging
+import time
 
 import httpx
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Header, HTTPException, status
 from jose import JWTError, jwt
 
@@ -17,7 +18,14 @@ def encrypt_key(raw_key: str) -> str:
 
 
 def decrypt_key(encrypted_key: str) -> str:
-    return _fernet().decrypt(encrypted_key.encode()).decode()
+    try:
+        return _fernet().decrypt(encrypted_key.encode()).decode()
+    except InvalidToken as exc:
+        # e.g. the server's encryption secret changed since the key was saved.
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="Your saved API key can't be read -- please re-enter it in Settings -> API Keys.",
+        ) from exc
 
 
 class AuthenticatedUser:
@@ -29,6 +37,11 @@ class AuthenticatedUser:
 logger = logging.getLogger(__name__)
 
 _jwks_cache: dict[str, dict] = {}
+# At most one refetch per interval, so a stream of tokens with made-up key ids
+# can't make us hit the JWKS endpoint on every request. (A real key rotation
+# is picked up within this window.)
+_last_jwks_fetch = 0.0
+_JWKS_MIN_REFETCH_SECONDS = 30
 
 
 async def _fetch_jwks() -> dict[str, dict]:
@@ -46,9 +59,15 @@ async def _signing_key_for(kid: str | None) -> dict | None:
     we haven't seen (i.e. after a key rotation)."""
     if kid is None:
         return None
+    global _last_jwks_fetch
     if kid not in _jwks_cache:
+        now = time.monotonic()
+        if _jwks_cache and now - _last_jwks_fetch < _JWKS_MIN_REFETCH_SECONDS:
+            return None
+        fetched = await _fetch_jwks()  # raises on an outage; cache is left intact
+        _last_jwks_fetch = now
         _jwks_cache.clear()
-        _jwks_cache.update(await _fetch_jwks())
+        _jwks_cache.update(fetched)
     return _jwks_cache.get(kid)
 
 
@@ -60,21 +79,37 @@ async def _decode_supabase_jwt(token: str) -> dict:
     try:
         header = jwt.get_unverified_header(token)
         if header.get("alg") == "HS256":
-            # Legacy shared-secret tokens.
+            # Legacy shared-secret tokens. With no secret configured this must
+            # never verify anything: an empty key would accept tokens anyone
+            # can mint.
+            if not settings.supabase_jwt_secret:
+                raise invalid
             return jwt.decode(
                 token,
                 settings.supabase_jwt_secret,
                 algorithms=["HS256"],
                 audience="authenticated",
+                options={"require_exp": True},
             )
 
         key = await _signing_key_for(header.get("kid"))
         if key is None:
             raise invalid
         return jwt.decode(
-            token, key, algorithms=["ES256", "RS256"], audience="authenticated"
+            token,
+            key,
+            algorithms=["ES256", "RS256"],
+            audience="authenticated",
+            options={"require_exp": True},
         )
-    except (JWTError, httpx.HTTPError) as exc:
+    except httpx.HTTPError as exc:
+        # Our dependency is down -- that's not the user's token being bad.
+        logger.error("Could not fetch signing keys: %r", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in verification is temporarily unavailable -- please retry.",
+        ) from exc
+    except JWTError as exc:
         logger.warning("Rejected bearer token: %r", exc)
         raise invalid from exc
 

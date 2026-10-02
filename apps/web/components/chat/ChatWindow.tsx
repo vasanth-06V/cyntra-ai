@@ -63,7 +63,12 @@ export function ChatWindow({
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
-      setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+      // Nothing was saved for a failed send: drop both local bubbles and give
+      // the draft back so it can be retried without retyping.
+      setMessages((prev) =>
+        prev.filter((m) => m.id !== assistantId && m.id !== userMessage.id)
+      );
+      setInput(content);
     } finally {
       setSending(false);
     }
@@ -71,7 +76,7 @@ export function ChatWindow({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
@@ -80,13 +85,14 @@ export function ChatWindow({
 
       <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border p-3">
         <select
-          value={provider}
+          value={provider ?? ""}
+          aria-label="Model provider"
           onChange={(e) => setProvider(e.target.value as ProviderName)}
           disabled={validProviders.length === 0}
           className="rounded-lg border border-border bg-transparent px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
           {validProviders.length === 0 ? (
-            <option>No valid keys</option>
+            <option value="">No valid keys</option>
           ) : (
             validProviders.map((p) => (
               <option key={p} value={p}>
@@ -99,6 +105,7 @@ export function ChatWindow({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Message…"
+          aria-label="Message"
           disabled={!provider || sending}
           className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
@@ -107,7 +114,11 @@ export function ChatWindow({
         </Button>
       </form>
 
-      {error && <p className="px-4 pb-3 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="px-4 pb-3 text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

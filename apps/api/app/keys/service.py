@@ -1,13 +1,38 @@
 import asyncio
 from datetime import UTC, datetime
 
+from fastapi import HTTPException, status
+
 from app.core.db import get_supabase
 from app.core.security import encrypt_key
-from app.providers.base import ProviderRateLimitError
+from app.providers.base import ProviderRateLimitError, ProviderUnavailableError
 from app.providers.registry import get_adapter
 
 
 async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> dict:
+    """Validates first and only stores a key that passed, so re-saving can
+    never replace a working key with a bad or unconfirmed one (which would
+    bounce the user back to onboarding)."""
+    adapter = get_adapter(provider)
+    try:
+        is_valid = await adapter.validate(api_key)
+    except ProviderRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"{provider.capitalize()} is rate-limiting right now, so the key couldn't be checked. Nothing was saved -- try again in a minute.",
+        ) from exc
+    except ProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{provider.capitalize()} is temporarily unavailable, so the key couldn't be checked. Nothing was saved -- try again shortly.",
+        ) from exc
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{provider.capitalize()} rejected this key -- double-check it's correct. Nothing was saved.",
+        )
+
     supabase = get_supabase()
     encrypted = encrypt_key(api_key)
 
@@ -20,7 +45,8 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
                     "provider": provider,
                     "slot": slot,
                     "encrypted_key": encrypted,
-                    "is_valid": False,
+                    "is_valid": True,
+                    "last_validated_at": datetime.now(UTC).isoformat(),
                 },
                 on_conflict="user_id,provider,slot",
             )
@@ -28,32 +54,7 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
         )
 
     result = await asyncio.to_thread(_upsert)
-    row = result.data[0]
-
-    adapter = get_adapter(provider)
-    try:
-        is_valid = await adapter.validate(api_key)
-    except ProviderRateLimitError:
-        # The key itself might be fine -- the provider is just currently
-        # rate-limited -- so leave validation as "not yet confirmed" rather
-        # than marking the key invalid outright.
-        is_valid = False
-
-    def _update_validity():
-        return (
-            supabase.table("provider_keys")
-            .update(
-                {
-                    "is_valid": is_valid,
-                    "last_validated_at": datetime.now(UTC).isoformat(),
-                }
-            )
-            .eq("id", row["id"])
-            .execute()
-        )
-
-    updated = await asyncio.to_thread(_update_validity)
-    return updated.data[0]
+    return result.data[0]
 
 
 async def list_keys(user_id: str) -> list[dict]:

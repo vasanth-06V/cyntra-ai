@@ -29,8 +29,15 @@ def _synonym_group(term: str) -> list[str]:
     return [term_lower]
 
 
+def _contains_word(variant: str, text: str) -> bool:
+    # Whole-word match: plain substring search made "ml" match "HTML", "ci"
+    # match "specific" and "java" match "JavaScript". The lookarounds (instead
+    # of \b) keep terms like "c++", "c#" and ".net" working.
+    return re.search(rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])", text) is not None
+
+
 def _term_present(term: str, resume_lower: str) -> bool:
-    return any(variant in resume_lower for variant in _synonym_group(term))
+    return any(_contains_word(variant, resume_lower) for variant in _synonym_group(term))
 
 
 def keyword_score(requirements: dict, resume_text: str) -> float:

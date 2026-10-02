@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProviderName(str, Enum):
@@ -18,7 +18,7 @@ class KeySlot(str, Enum):
 class SubmitKeyRequest(BaseModel):
     provider: ProviderName
     slot: KeySlot
-    api_key: str
+    api_key: str = Field(min_length=8, max_length=512)
 
 
 class ProviderKeyOut(BaseModel):

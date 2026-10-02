@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import type { Resume } from "@/types/resumes";
 
 function statusLabel(resume: Resume): { text: string; className: string } {
@@ -17,6 +18,7 @@ export function ResumesView() {
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,7 +64,7 @@ export function ResumesView() {
 
     try {
       const res = await fetch("/api/resumes", { method: "POST", body: formData });
-      const body = await res.json();
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Upload failed.");
       if (body.processingError) {
         setError(`Uploaded, but processing failed: ${body.processingError}`);
@@ -77,10 +79,34 @@ export function ResumesView() {
   }
 
   async function handleDelete(id: string) {
+    setError(null);
+    const previous = resumes;
     setResumes((prev) => prev.filter((r) => r.id !== id));
-    await fetch(`/api/resumes/${id}`, { method: "DELETE" }).catch(() => {
-      loadResumes();
-    });
+    try {
+      const res = await fetch(`/api/resumes/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not delete this resume.");
+      }
+    } catch (err) {
+      setResumes(previous);
+      setError(err instanceof Error ? err.message : "Could not delete this resume.");
+    }
+  }
+
+  async function handleRetry(id: string) {
+    setError(null);
+    setRetryingId(id);
+    try {
+      await apiClient.post(`/rag/resumes/${id}/process`);
+      await loadResumes();
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? `Processing failed: ${err.message}` : "Processing failed."
+      );
+    } finally {
+      setRetryingId(null);
+    }
   }
 
   return (
@@ -108,7 +134,11 @@ export function ResumesView() {
         PDF or DOCX, up to 5MB. Used for interviews and ATS score checks.
       </p>
 
-      {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-4 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {loading ? (
         <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
@@ -135,6 +165,17 @@ export function ResumesView() {
                       </p>
                       <p className={`text-xs ${status.className}`}>{status.text}</p>
                     </div>
+                    <div className="flex items-center gap-4">
+                    {!resume.parsed_text && (
+                      <button
+                        type="button"
+                        onClick={() => handleRetry(resume.id)}
+                        disabled={retryingId === resume.id}
+                        className="text-sm text-primary hover:underline cursor-pointer disabled:opacity-50"
+                      >
+                        {retryingId === resume.id ? "Processing…" : "Retry processing"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleDelete(resume.id)}
@@ -142,6 +183,7 @@ export function ResumesView() {
                     >
                       Delete
                     </button>
+                    </div>
                   </Card>
                 </motion.div>
               );

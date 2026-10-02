@@ -51,6 +51,17 @@ T = TypeVar("T")
 _RETRY_DELAYS = (1.0, 2.0)
 
 
+async def _notify_failover(user_id: str, provider: str) -> None:
+    try:
+        await notify_user(
+            user_id,
+            f"Your primary {provider} key hit its rate limit -- switched to your backup key.",
+        )
+    except Exception:
+        # The answer already exists; losing it over a notification would be worse.
+        logger.warning("Could not record the key-failover notification", exc_info=True)
+
+
 async def _primary_key(user_id: str, provider: str) -> str:
     row = await get_key_row(user_id, provider, "primary")
     if not row:
@@ -124,10 +135,7 @@ async def _with_failover(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Both primary and backup {provider} keys are rate-limited",
                 ) from exc
-            await notify_user(
-                user_id,
-                f"Your primary {provider} key hit its rate limit -- switched to your backup key.",
-            )
+            await _notify_failover(user_id, provider)
             return result
     except ProviderUnavailableError as exc:
         raise _overloaded(provider) from exc
@@ -224,10 +232,7 @@ async def stream(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail=f"Both primary and backup {provider} keys are rate-limited",
                 ) from exc
-            await notify_user(
-                user_id,
-                f"Your primary {provider} key hit its rate limit -- switched to your backup key.",
-            )
+            await _notify_failover(user_id, provider)
     except ProviderUnavailableError as exc:
         if chunk_sent:
             raise

@@ -5,6 +5,8 @@ from anthropic import (
     APIConnectionError,
     AuthenticationError,
     InternalServerError,
+    NotFoundError,
+    PermissionDeniedError,
     RateLimitError,
 )
 
@@ -102,10 +104,12 @@ class ClaudeAdapter(ProviderAdapter):
                 )
                 _record_usage(usage, response)
                 yield "".join(block.text for block in response.content if block.type == "text")
-        except AuthenticationError as exc:
+        except (AuthenticationError, PermissionDeniedError) as exc:
             raise ProviderAuthError(str(exc)) from exc
         except RateLimitError as exc:
             raise ProviderRateLimitError(str(exc)) from exc
+        except NotFoundError as exc:
+            raise ProviderUnavailableError(f"model not found: {exc}") from exc
         except _TRANSIENT_ERRORS as exc:
             raise ProviderUnavailableError(str(exc)) from exc
 
