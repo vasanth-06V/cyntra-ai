@@ -3,6 +3,7 @@ from app.llm import gateway
 from app.llm.budget import truncate
 from app.llm.options import LLMOptions
 from app.llm.prompts.interview import SUMMARY_PROMPT
+from app.llm.untrusted import NOTICE, new_boundary, sanitize_derived, wrap
 from app.providers.base import Message, MessageRole
 
 _OPTIONS = LLMOptions(
@@ -12,11 +13,12 @@ _OPTIONS = LLMOptions(
     feature="interview_summary",
     priority="background",
     prompt_id="interview.summary",
-    prompt_version="1",
+    prompt_version="2",
 )
 
 SUMMARIZE_EVERY_N_TURNS = 8
 _TURN_TOKEN_CAP = 150
+_SUMMARY_MAX_TOKENS = 150
 
 
 async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> None:
@@ -31,11 +33,22 @@ async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> 
     if len(turns) < SUMMARIZE_EVERY_N_TURNS:
         return
 
+    boundary = new_boundary()
+    # Candidate turns are untrusted; the interviewer's own replies are ours.
     turns_text = "\n".join(
-        f"{t['speaker']}: {truncate(t['text'], _TURN_TOKEN_CAP)}" for t in turns
+        f"{t['speaker']}: "
+        + (
+            truncate(t["text"], _TURN_TOKEN_CAP)
+            if t["speaker"] == "ai"
+            else wrap("candidate_answer", truncate(t["text"], _TURN_TOKEN_CAP), boundary)
+        )
+        for t in turns
     )
+    previous = interview.get("running_summary")
     prompt = SUMMARY_PROMPT.format(
-        previous=interview.get("running_summary") or "none", turns=turns_text
+        notice=NOTICE,
+        previous=wrap("interview_summary", previous, boundary) if previous else "none",
+        turns=turns_text,
     )
     summary = await gateway.complete(
         user_id, provider, [Message(role=MessageRole.USER, content=prompt)], _OPTIONS
@@ -44,7 +57,8 @@ async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> 
     await interviews_repo.update_interview(
         interview_id,
         {
-            "running_summary": summary.strip(),
+            # Distilled from candidate text and re-used later: sanitize and cap it.
+            "running_summary": sanitize_derived(summary, _SUMMARY_MAX_TOKENS),
             "summarized_through_turn": turns[-1]["turn_index"] + 1,
         },
     )

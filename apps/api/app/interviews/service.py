@@ -13,14 +13,26 @@ from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase
 from app.interviews.types import get_config
 from app.db.keys import get_key_row
 from app.llm import gateway
-from app.llm.budget import ensure_user_first, fit_to_budget, truncate
+from app.llm.budget import ensure_user_first, estimate_tokens, fit_to_budget, truncate
 from app.llm.schemas import SetupOut
 from app.llm.options import LLMOptions
 from app.llm.prompts.interview import (
     SETUP_PROMPT,
+    TURN_RULES_LINE,
     TURN_SYSTEM,
+    context_block,
     goal_for,
     question_index_for,
+)
+from app.llm.untrusted import (
+    NOTICE,
+    SAFE_REDIRECT,
+    attach_context,
+    clean_reply,
+    leaks_protected_text,
+    new_boundary,
+    sanitize_derived,
+    wrap,
 )
 from app.providers.base import Message, MessageRole
 from app.rag.retrieval import match_question_bank, match_resume_chunks
@@ -37,7 +49,7 @@ _SETUP_OPTIONS = LLMOptions(
     temperature=0.7,
     feature="interview_setup",
     prompt_id="interview.setup",
-    prompt_version="1",
+    prompt_version="2",
 )
 # trim_on_length: a reply cut off by the 160-token cap is shown as complete
 # sentences, never a dangling half sentence.
@@ -47,7 +59,7 @@ _TURN_OPTIONS = LLMOptions(
     trim_on_length=True,
     feature="interview_turn",
     prompt_id="interview.turn",
-    prompt_version="1",
+    prompt_version="2",
 )
 
 _JD_SETUP_TOKENS = 1200
@@ -130,11 +142,13 @@ async def start_interview(
                 _RESUME_FALLBACK_TOKENS,
             )
 
+        boundary = new_boundary()
         setup_prompt = SETUP_PROMPT.format(
             type_line=config.system_prompt,
+            notice=NOTICE,
             goal=goal_for(config.phases[0][0]),
-            resume=resume_context,
-            jd=truncate(jd_text, _JD_SETUP_TOKENS),
+            resume=wrap("resume_digest", resume_context, boundary),
+            jd=wrap("job_description", truncate(jd_text, _JD_SETUP_TOKENS), boundary),
         )
         try:
             setup = await gateway.complete_structured(
@@ -155,7 +169,10 @@ async def start_interview(
             brief = truncate(
                 f"{truncate(jd_text, 150)}\nCandidate: {resume_context}", _BRIEF_MAX_TOKENS
             )
-        brief = truncate(brief, _BRIEF_MAX_TOKENS)
+        # The brief is distilled from untrusted text and will be re-used in
+        # every later turn: sanitize it before it is stored.
+        brief = sanitize_derived(brief, _BRIEF_MAX_TOKENS)
+        opening_message = clean_reply(opening_message) or _FALLBACK_OPENING
 
         now = datetime.now(UTC)
         ends_at = now + timedelta(minutes=config.total_minutes)
@@ -212,36 +229,50 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
             )
 
     brief = interview.get("brief") or truncate(interview.get("jd_text") or "", _JD_FALLBACK_TOKENS)
+    boundary = new_boundary()
     system_text = TURN_SYSTEM.format(
         type_line=config.system_prompt,
+        notice=NOTICE,
         phase=current_phase,
         goal=goal_for(current_phase),
-        brief=brief,
         question=question_block,
     )
     messages = [Message(role=MessageRole.SYSTEM, content=system_text)]
-    if interview.get("running_summary"):
-        messages.append(
-            Message(
-                role=MessageRole.SYSTEM,
-                content=f"Summary of the interview so far: {interview['running_summary']}",
-            )
-        )
-    leading = len(messages)
+    leading = 1
+
+    def as_message(speaker_is_ai: bool, text: str, cap: int) -> Message:
+        # Candidate words are untrusted data; the interviewer's own earlier
+        # replies are ours.
+        text = truncate(text, cap)
+        if speaker_is_ai:
+            return Message(role=MessageRole.ASSISTANT, content=text)
+        return Message(role=MessageRole.USER, content=wrap("candidate_answer", text, boundary))
 
     # The candidate's new answer goes into the prompt but is only *saved* once
     # the reply succeeded -- otherwise a failed call (429/503) would leave a
     # dangling answer, and the retry would store it twice.
     recent = await _recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT - 1)
     for turn in recent:
-        role = MessageRole.ASSISTANT if turn["speaker"] == "ai" else MessageRole.USER
-        messages.append(Message(role=role, content=truncate(turn["text"], _TURN_TOKEN_CAP)))
-    messages.append(Message(role=MessageRole.USER, content=truncate(content, _TURN_TOKEN_CAP * 4)))
-    messages = fit_to_budget(messages, _PROMPT_BUDGET_TOKENS, keep_leading=leading)
-    messages = ensure_user_first(messages, leading, placeholder="(interview started)")
+        messages.append(as_message(turn["speaker"] == "ai", turn["text"], _TURN_TOKEN_CAP))
+    messages.append(as_message(False, content, _TURN_TOKEN_CAP * 4))
 
-    ai_reply = await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
-    ai_reply = ai_reply.strip()
+    # Brief + running summary ride along as data in the conversation, and the
+    # window is trimmed to leave room for them.
+    context = context_block(brief, interview.get("running_summary"), boundary)
+    messages = fit_to_budget(
+        messages, _PROMPT_BUDGET_TOKENS - estimate_tokens(context), keep_leading=leading
+    )
+    messages = attach_context(messages, leading, context)
+    messages = ensure_user_first(messages, leading)
+
+    ai_reply = clean_reply(
+        await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
+    )
+    if leaks_protected_text(ai_reply, [NOTICE, TURN_RULES_LINE], window=8):
+        # The model echoed its own rules back -- most likely because the
+        # candidate asked for them. Say nothing of it; log without the content.
+        logger.warning("Interviewer reply filtered: it repeated the interview rules")
+        ai_reply = SAFE_REDIRECT
 
     turn_index = await _next_turn_index(interview_id)
     await _append_transcript(interview_id, turn_index, "user", content)

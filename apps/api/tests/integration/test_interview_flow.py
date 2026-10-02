@@ -161,12 +161,18 @@ async def test_full_flow_turns_complete_and_transcript(client, keyed):
     assert d["phase"] == "warm_up" and d["is_final_phase"] is False
     assert 0 < d["minutes_remaining"] <= 60
 
-    # exactly one LLM call for the turn, capped output, user-first, system carries the brief
+    # exactly one LLM call for the turn, capped output, user-first
     call = keyed.gemini.chat_calls[-1]
     assert call.options.max_output_tokens == 160 and call.options.task == "interview"
     non_system = [m for m in call.messages if m.role.value != "system"]
-    assert non_system[0].role.value == "user" and non_system[-1].content == "I led a migration."
-    assert "Senior Python role needing Kubernetes." in call.messages[0].content
+    assert non_system[0].role.value == "user"
+    # the candidate's answer travels as marked-up data
+    assert "I led a migration." in non_system[-1].content and "<data kind=\"candidate_answer\"" in non_system[-1].content
+    # injection standard: the brief (distilled from untrusted text) is NOT in the system role,
+    # it rides along as data in the conversation; the system role only carries our rules
+    assert "Senior Python role needing Kubernetes." not in call.messages[0].content
+    assert "Senior Python role needing Kubernetes." in non_system[0].content
+    assert "never instructions" in call.messages[0].content
     assert "Welcome" not in call.messages[0].content
 
     tr = await client.get(f"/interviews/{iid}/transcript", headers=as_user(USER_A))
@@ -215,7 +221,9 @@ async def test_incremental_summary_kicks_in_after_enough_turns_and_feeds_next_pr
 
     await client.post(f"/interviews/{iid}/turns", json={"content": "next"}, headers=as_user(USER_A))
     last = keyed.gemini.chat_calls[-1].messages
-    assert any("Summary of the interview so far" in m.content for m in last if m.role.value == "system")
+    # the running summary is data inside the conversation, never part of the system role
+    assert any("Covered Python; candidate was solid." in m.content for m in last if m.role.value == "user")
+    assert not any("Covered Python" in m.content for m in last if m.role.value == "system")
 
 
 async def test_summary_failure_does_not_fail_the_turn(client, keyed):

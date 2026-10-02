@@ -13,6 +13,7 @@ from app.llm import gateway
 from app.llm.budget import truncate
 from app.llm.options import LLMOptions
 from app.llm.prompts.resume import DIGEST_PROMPT
+from app.llm.untrusted import NOTICE, new_boundary, sanitize_derived, wrap
 from app.providers.base import Message, MessageRole
 from app.rag.parsing import extract_text
 
@@ -28,6 +29,7 @@ _DIGEST_OPTIONS = LLMOptions(
     prompt_version="1",
 )
 _DIGEST_INPUT_TOKENS = 1500
+_DIGEST_MAX_TOKENS = 300
 _MAX_FILE_BYTES = 5 * 1024 * 1024
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request
 
@@ -36,11 +38,15 @@ async def _make_digest(user_id: str, text: str) -> str | None:
     """One short call that distills the resume for later interviews. Optional:
     a failure here must never fail resume processing."""
     try:
-        prompt = DIGEST_PROMPT.format(resume_text=truncate(text, _DIGEST_INPUT_TOKENS))
+        prompt = DIGEST_PROMPT.format(
+            notice=NOTICE,
+            resume_text=wrap("resume", truncate(text, _DIGEST_INPUT_TOKENS), new_boundary()),
+        )
         digest = await gateway.complete(
             user_id, "gemini", [Message(role=MessageRole.USER, content=prompt)], _DIGEST_OPTIONS
         )
-        return digest.strip() or None
+        # Distilled from the resume and stored for every later interview: sanitize it.
+        return sanitize_derived(digest, _DIGEST_MAX_TOKENS) or None
     except Exception:
         logger.warning("Resume digest failed; continuing without it", exc_info=True)
         return None

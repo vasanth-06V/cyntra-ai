@@ -138,10 +138,14 @@ async def test_turn_prompt_is_lean_single_call_and_injects_question(monkeypatch)
     assert estimate_messages_tokens(messages) <= 1200
     assert options.max_output_tokens == 160
     system = messages[0].content
-    assert "Short brief." in system and "HUGE JD" not in system
-    assert "Merge two sorted lists." in system
+    everything = " ".join(m.content for m in messages)
+    assert "HUGE JD" not in everything  # the raw JD is never resent
+    assert "Merge two sorted lists." in system  # the (trusted) current question stays in the rules
     assert asked == ["q-2"]  # problem_2 -> second question
-    assert "Covered arrays." in messages[1].content
+    # brief and summary were distilled from untrusted text: data in the conversation, not system
+    assert "Short brief." not in system and "Covered arrays." not in system
+    first_user = next(m.content for m in messages if m.role.value == "user")
+    assert "Short brief." in first_user and "Covered arrays." in first_user
 
 
 class _Table:

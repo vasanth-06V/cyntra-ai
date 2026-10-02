@@ -6,7 +6,10 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator
 
+from app.llm.untrusted import neutralize_tags, strip_controls
+
 _MAX_TERMS = 15
+_MAX_TERM_CHARS = 80
 
 
 def _clean_list(value) -> list[str]:
@@ -15,7 +18,12 @@ def _clean_list(value) -> list[str]:
         value = [value]
     if not isinstance(value, list):
         return []
-    cleaned = [str(v).strip() for v in value if isinstance(v, (str, int, float)) and str(v).strip()]
+    cleaned = []
+    for item in value:
+        if isinstance(item, (str, int, float)):
+            term = neutralize_tags(strip_controls(str(item))).strip()[:_MAX_TERM_CHARS]
+            if term:
+                cleaned.append(term)
     return cleaned[:_MAX_TERMS]
 
 

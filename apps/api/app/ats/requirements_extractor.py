@@ -9,6 +9,7 @@ from app.llm.budget import truncate
 from app.llm.json_utils import extract_json
 from app.llm.prompts.ats import REQUIREMENTS_PROMPT
 from app.llm.ttl_cache import TTLCache
+from app.llm.untrusted import NOTICE, new_boundary, wrap
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
 
@@ -38,7 +39,10 @@ async def extract_requirements(user_id: str, provider: str, jd_text: str) -> dic
     if cached is not None:
         return cached
 
-    prompt = REQUIREMENTS_PROMPT.format(jd_text=truncate(jd_text, _JD_TOKEN_BUDGET))
+    prompt = REQUIREMENTS_PROMPT.format(
+        notice=NOTICE,
+        jd_text=wrap("job_description", truncate(jd_text, _JD_TOKEN_BUDGET), new_boundary()),
+    )
     try:
         parsed = await gateway.complete_structured(
             user_id, provider, [Message(role=MessageRole.USER, content=prompt)], RequirementsOut, _OPTIONS
