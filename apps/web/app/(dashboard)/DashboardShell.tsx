@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { requireUser } from "@/lib/auth/guards";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { SignOutButton } from "@/components/ui/SignOutButton";
+import { ServerWakingBanner } from "@/components/ui/ServerWakingBanner";
 
 const NAV_ITEMS = [
   { href: "/chat", label: "Chat" },
@@ -51,6 +52,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
             <SignOutButton />
           </div>
         </header>
+        <ServerWakingBanner />
         {/* Below sm the sidebar is hidden, so the same links run as a scrolling bar. */}
         <nav
           aria-label="Main"
