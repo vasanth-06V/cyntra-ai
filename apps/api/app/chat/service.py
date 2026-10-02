@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.db import get_supabase
 from app.llm import gateway
-from app.llm.budget import fit_to_budget
+from app.llm.budget import ensure_user_first, fit_to_budget
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
 
@@ -126,7 +126,7 @@ async def stream_reply(
 
     messages = [_row_to_message(row) for row in history_rows[-_MAX_HISTORY_MESSAGES:]]
     messages.append(Message(role=MessageRole.USER, content=user_content))
-    messages = fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0)
+    messages = ensure_user_first(fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0))
 
     collected: list[str] = []
     async for chunk in gateway.stream(user_id, provider, messages, _OPTIONS):

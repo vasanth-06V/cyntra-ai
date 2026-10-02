@@ -1,4 +1,7 @@
 import asyncio
+import json
+import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -9,7 +12,7 @@ from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase
 from app.interviews.types import get_config
 from app.keys.service import get_key_row
 from app.llm import gateway
-from app.llm.budget import fit_to_budget, truncate
+from app.llm.budget import ensure_user_first, fit_to_budget, truncate
 from app.llm.json_utils import extract_json
 from app.llm.options import LLMOptions
 from app.llm.prompts.interview import (
@@ -20,6 +23,8 @@ from app.llm.prompts.interview import (
 )
 from app.providers.base import Message, MessageRole
 from app.rag.retrieval import match_question_bank, match_resume_chunks
+
+logger = logging.getLogger(__name__)
 
 MAX_RAW_TURNS_IN_CONTEXT = 6
 
@@ -168,6 +173,26 @@ async def _recent_turns(interview_id: str, limit: int) -> list[dict]:
     return list(reversed(result.data))
 
 
+_OPENING_FIELD = re.compile(r'"opening"\s*:\s*"((?:[^"\\]|\\.)*)')
+_FALLBACK_OPENING = "Hello, and thanks for joining. To start, could you tell me a little about yourself?"
+
+
+def _salvage_opening(raw: str) -> str:
+    """The model didn't return usable JSON (e.g. it was cut off by the output
+    cap). Never show raw JSON to the candidate: pull the opening text out of
+    it if present, otherwise use plain text as-is, otherwise a stock greeting."""
+    raw = raw.strip()
+    if not raw.startswith(("{", "```")):
+        return raw or _FALLBACK_OPENING
+    match = _OPENING_FIELD.search(raw)
+    if match and match.group(1).strip():
+        try:
+            return json.loads(f'"{match.group(1)}"').strip()
+        except ValueError:
+            return match.group(1).strip()
+    return _FALLBACK_OPENING
+
+
 async def _get_question_text(question_id: str) -> str | None:
     supabase = get_supabase()
 
@@ -244,7 +269,7 @@ async def start_interview(
         except (ValueError, KeyError, TypeError):
             # The model ignored the format: use its text as the greeting and
             # build the brief without another call.
-            opening_message = raw.strip()
+            opening_message = _salvage_opening(raw)
             brief = ""
         if not brief:
             brief = truncate(
@@ -294,7 +319,13 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
 
     question_block = ""
     question_ids = interview.get("selected_question_ids") or []
-    if config.needs_coding_platform and question_ids:
+    # Only while a problem is actually being worked on -- not during the intro
+    # (which would reveal it early) or the wrap-up.
+    if (
+        config.needs_coding_platform
+        and question_ids
+        and (current_phase.startswith("problem_") or current_phase == "coding")
+    ):
         index = min(question_index_for(current_phase), len(question_ids) - 1)
         question_text = await _get_question_text(question_ids[index])
         if question_text:
@@ -325,12 +356,18 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         role = MessageRole.ASSISTANT if turn["speaker"] == "ai" else MessageRole.USER
         messages.append(Message(role=role, content=truncate(turn["text"], _TURN_TOKEN_CAP)))
     messages = fit_to_budget(messages, _PROMPT_BUDGET_TOKENS, keep_leading=leading)
+    messages = ensure_user_first(messages, leading, placeholder="(interview started)")
 
     ai_reply = await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
     ai_reply = ai_reply.strip()
 
     await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)
-    await summarizer.maybe_update_summary(interview, user_id, interview["provider"])
+    try:
+        await summarizer.maybe_update_summary(interview, user_id, interview["provider"])
+    except Exception:
+        # The reply is already saved and shown; a failed summary (quota, outage)
+        # just means it is retried on a later turn -- it must not fail this one.
+        logger.warning("Interview summary update failed", exc_info=True)
 
     return {
         "message": ai_reply,

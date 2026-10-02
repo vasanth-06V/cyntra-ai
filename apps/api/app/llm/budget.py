@@ -7,7 +7,7 @@ prompt size, not to bill -- real counts come from provider-reported usage.
 
 from collections.abc import Sequence
 
-from app.providers.base import Message
+from app.providers.base import Message, MessageRole
 
 CHARS_PER_TOKEN = 4
 _PER_MESSAGE_OVERHEAD = 4  # role markers etc.
@@ -54,3 +54,20 @@ def fit_to_budget(
         rest[-1] = Message(role=last.role, content=truncate(last.content, allowed))
         fitted = leading + rest
     return fitted
+
+
+def ensure_user_first(
+    messages: Sequence[Message], keep_leading: int = 0, placeholder: str | None = None
+) -> list[Message]:
+    """Providers want the first non-system message to come from the user
+    (Claude rejects anything else; Gemini is strict about turn order). A
+    sliding window can start on an assistant turn, so either drop that turn
+    or, with a placeholder, put a short user line in front of it."""
+    leading = list(messages[:keep_leading])
+    body = list(messages[keep_leading:])
+    if body and body[0].role == MessageRole.ASSISTANT:
+        if placeholder:
+            body.insert(0, Message(role=MessageRole.USER, content=placeholder))
+        elif len(body) > 1:
+            body = body[1:]
+    return leading + body

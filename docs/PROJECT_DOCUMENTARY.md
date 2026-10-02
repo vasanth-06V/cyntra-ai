@@ -451,4 +451,10 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 
 **Remaining from the plan**: add an "LLM gateway" section to `docs/IMPLEMENTATION.md`; re-run Supabase advisors (migration 0018 added columns only).
 
+### [2026-10-02] Audit of steps 1-6 against the plan -- 4 defects found and fixed
+
+**Action**: Re-read gateway, limiter, usage, all three adapters, embeddings and the interview/chat/ATS services against the plan. Fixed: (1) the interview setup fallback could show **raw/truncated JSON as the AI's greeting** if the model's JSON was cut off -> `_salvage_opening` extracts the `opening` field or uses a stock greeting; (2) the coding question was injected in **every phase including intro/wrap-up** (revealing problem 1 early) -> only in `problem_N` / `coding` phases; (3) a failing summary call **failed the whole turn after the reply was already saved** -> now logged and retried on a later turn; (4) the first non-system message could be an **assistant turn** (every interview's first turn; chat windows after a failed reply) which Claude rejects and Gemini is strict about -> `llm/budget.py::ensure_user_first` (placeholder user line for interviews, drop for chat).
+
+**Result**: 139 mocked tests pass. Supabase security advisor: only the known "Leaked Password Protection" WARN. Known, accepted gaps: Claude/Groq `validate()` still spend one generation request (plan only covered Gemini); Gemini safety-blocked replies raise an unmapped ValueError (500); per-key client cache holds API keys in process memory; `current_question_index` and the ATS use of the resume digest were dropped from the plan; the gateway section of `IMPLEMENTATION.md` is still to be written. Nothing verified live.
+
 *(Next: Phase 7 -- coding platform, once the user says to continue.)*
