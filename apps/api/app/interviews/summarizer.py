@@ -5,7 +5,15 @@ from app.llm.options import LLMOptions
 from app.llm.prompts.interview import SUMMARY_PROMPT
 from app.providers.base import Message, MessageRole
 
-_OPTIONS = LLMOptions(task="summarize", max_output_tokens=150, temperature=0.2)
+_OPTIONS = LLMOptions(
+    task="summarize",
+    max_output_tokens=150,
+    temperature=0.2,
+    feature="interview_summary",
+    priority="background",
+    prompt_id="interview.summary",
+    prompt_version="1",
+)
 
 SUMMARIZE_EVERY_N_TURNS = 8
 _TURN_TOKEN_CAP = 150

@@ -25,7 +25,7 @@ async def _semantic_score(user_id: str, resume_id: str, requirements: dict) -> f
     # One embedding request for every keyword (was one per keyword, ~20 per
     # run). The per-keyword resume lookups are plain DB queries -- no model
     # quota -- so they run concurrently.
-    embeddings = await gateway.embed(user_id, terms)
+    embeddings = await gateway.embed(user_id, terms, kind="query")
     matches = await asyncio.gather(
         *(match_resume_chunks(resume_id, e, match_count=1) for e in embeddings)
     )

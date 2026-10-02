@@ -3,7 +3,15 @@ from app.llm.options import LLMOptions
 from app.llm.prompts.ats import FEEDBACK_PROMPT
 from app.providers.base import Message, MessageRole
 
-_OPTIONS = LLMOptions(task="feedback", max_output_tokens=400, temperature=0.4)
+_OPTIONS = LLMOptions(
+    task="feedback",
+    max_output_tokens=400,
+    temperature=0.4,
+    trim_on_length=True,
+    feature="ats_feedback",
+    prompt_id="ats.feedback",
+    prompt_version="1",
+)
 
 async def generate_feedback(
     user_id: str,

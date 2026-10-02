@@ -12,7 +12,15 @@ from app.providers.base import Message, MessageRole
 
 # Structured, deterministic, short: JSON mode removes the need for "no markdown"
 # instructions, and the cap bounds output.
-_OPTIONS = LLMOptions(task="extract", json_mode=True, max_output_tokens=600, temperature=0.0)
+_OPTIONS = LLMOptions(
+    task="extract",
+    json_mode=True,
+    max_output_tokens=600,
+    temperature=0.0,
+    feature="ats_requirements",
+    prompt_id="ats.requirements",
+    prompt_version="1",
+)
 
 _JD_TOKEN_BUDGET = 1500
 _cache = TTLCache(ttl_seconds=3600)

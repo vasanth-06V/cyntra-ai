@@ -29,7 +29,7 @@ def _common_mocks(monkeypatch):
     )
     embed_calls.clear()
 
-    async def fake_embed(user_id, texts):
+    async def fake_embed(user_id, texts, kind="doc"):
         embed_calls.append(list(texts))
         return [[0.1, 0.2] for _ in texts]
 

@@ -41,7 +41,7 @@ def start_mocks(monkeypatch):
     monkeypatch.setattr(service, "match_question_bank", lambda *a, **k: _value([]))
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _value({"id": "i-1"}))
 
-    async def fake_embed(user_id, texts):
+    async def fake_embed(user_id, texts, kind="doc"):
         calls["embed"] += 1
         return [[0.1] for _ in texts]
 

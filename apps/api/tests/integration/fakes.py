@@ -370,7 +370,7 @@ class FakeAdapter(ProviderAdapter):
         else:
             yield text
 
-    async def embed_many(self, api_key, texts, usage=None):
+    async def embed_many(self, api_key, texts, usage=None, kind="doc"):
         self.embed_calls.append(SimpleNamespace(api_key=api_key, texts=list(texts)))
         if api_key in self.rate_limited_keys:
             raise ProviderRateLimitError("quota")

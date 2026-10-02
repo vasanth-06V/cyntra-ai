@@ -2,6 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.llm import gateway
+from app.llm.keystate import cooldowns, key_hash
 from app.llm.options import LLMOptions, Usage
 from app.providers.base import (
     Message,
@@ -49,8 +50,8 @@ class FakeLimiter:
     def __init__(self):
         self.acquired: list[tuple[str, str]] = []
 
-    async def acquire(self, user_id, bucket):
-        self.acquired.append((user_id, bucket))
+    async def acquire(self, owner, bucket, priority="interactive"):
+        self.acquired.append((owner, bucket))
 
 
 @pytest.fixture
@@ -104,7 +105,7 @@ async def test_complete_uses_the_primary_key_passes_options_and_records_usage(en
     assert env.adapter.calls == ["primary-key"]
     assert env.adapter.last_options == options
     assert env.adapter.last_stream is False
-    assert env.limiter.acquired == [(USER, "gemini")]
+    assert env.limiter.acquired == [(key_hash("primary-key"), "gemini")]  # keyed by the key, not the user
     assert env.recorded[0]["kind"] == "chat"
     assert env.recorded[0]["usage"] == Usage(requests=1, input_tokens=10, output_tokens=5)
     assert env.recorded[0]["est_in"] > 0  # fallback estimate is supplied too
@@ -292,9 +293,11 @@ async def test_stream_412_without_a_key(env):
 @pytest.fixture
 def embed_env(env, monkeypatch):
     calls: list[tuple[str, list[str]]] = []
+    kinds: list[str] = []
     outcomes: dict[str, list] = {}
 
-    async def fake_embed_texts(api_key, texts, usage=None):
+    async def fake_embed_texts(api_key, texts, usage=None, kind="doc"):
+        kinds.append(kind)
         calls.append((api_key, list(texts)))
         script = outcomes.get(api_key, [])
         if script:
@@ -304,7 +307,7 @@ def embed_env(env, monkeypatch):
         return [[0.0] for _ in texts]
 
     monkeypatch.setattr(gateway, "embed_texts", fake_embed_texts)
-    env.embed_calls, env.embed_outcomes = calls, outcomes
+    env.embed_calls, env.embed_outcomes, env.embed_kinds = calls, outcomes, kinds
     return env
 
 
@@ -314,7 +317,7 @@ async def test_embed_sends_one_batch_through_the_gemini_embed_bucket(embed_env):
 
     assert len(vectors) == 3
     assert embed_env.embed_calls == [("primary-key", ["a", "b", "c"])]
-    assert embed_env.limiter.acquired == [(USER, "gemini:embed")]
+    assert embed_env.limiter.acquired == [(key_hash("primary-key"), "gemini:embed")]
     assert embed_env.recorded[0]["provider"] == "gemini"
     assert embed_env.recorded[0]["kind"] == "embed"
 

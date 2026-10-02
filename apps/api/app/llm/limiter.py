@@ -37,10 +37,14 @@ class RateLimiter:
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._acquires = 0
 
-    async def acquire(self, user_id: str, bucket: str) -> None:
-        """Waits for a free slot in this user's sliding one-minute window,
-        or raises 429 if that would take longer than max_wait. Waiters for
-        the same (user, bucket) queue in order behind a lock."""
+    async def acquire(self, owner: str, bucket: str, priority: str = "interactive") -> None:
+        """Waits for a free slot in this owner's sliding one-minute window
+        (owner = a key fingerprint: quotas belong to the key's project), or
+        raises 429 if that would take longer than max_wait. Waiters for the
+        same (owner, bucket) queue in order behind a lock.
+
+        "background" callers (summaries, digests) may not use the last
+        quarter of the window, so a user's live turn never waits behind them."""
         limit = self._limits.get(bucket)
         if not limit:
             return
@@ -49,7 +53,8 @@ class RateLimiter:
         if self._acquires % 256 == 0:
             self._evict_idle()
 
-        key = (user_id, bucket)
+        key = (owner, bucket)
+        ceiling = limit if priority != "background" else max(1, limit - max(1, limit // 4))
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
             window = self._windows.setdefault(key, deque())
@@ -58,7 +63,7 @@ class RateLimiter:
                 now = self._clock()
                 while window and now - window[0] >= _WINDOW_SECONDS:
                     window.popleft()
-                if len(window) < limit:
+                if len(window) < ceiling:
                     window.append(now)
                     return
 

@@ -14,6 +14,9 @@ Sonnet 5.5 as well until that is re-evaluated.
 
 EMBEDDING_MODEL = "models/gemini-embedding-001"
 EMBEDDING_DIMENSIONS = 768  # matches the vector(768) columns
+# Written on every embedded row (once those columns exist) so a later model or
+# task-type change can find stale vectors.
+EMBEDDING_VERSION = "gemini-embedding-001:768:v2"
 
 _GEMINI = "gemini-flash-lite-latest"
 _CLAUDE_STRONG = "claude-sonnet-5-5"
@@ -50,9 +53,53 @@ MODELS: dict[str, dict[str, str]] = {
     },
 }
 
+# Seconds a single provider call may take (for streams: the longest silence
+# between chunks) before it is abandoned. Without these the SDK defaults apply
+# -- up to 10 minutes -- which would freeze a live interview turn.
+TIMEOUTS: dict[str, float] = {
+    "chat": 60.0,
+    "interview": 25.0,
+    "feedback": 40.0,
+    "extract": 30.0,
+    "summarize": 30.0,
+    "validate": 15.0,
+}
+DEFAULT_TIMEOUT = 30.0
+
+# Gemini lite-class models "think" by default and thought tokens count against
+# maxOutputTokens, which would silently truncate our tight caps. Per model:
+#   thinking_config -- sent as generationConfig.thinkingConfig to keep thinking
+#                      minimal (None = send nothing, e.g. models that don't think)
+#   allowance       -- extra output tokens added to the caller's cap to cover
+#                      whatever thinking still happens
+# The adapter self-heals: if the API rejects thinkingConfig it retries without
+# it and stops sending it for the rest of the process. Verify with the
+# user-run smoke script (scripts/llm_smoke.py).
+GEMINI_MODEL_TRAITS: dict[str, dict] = {
+    "gemini-flash-lite-latest": {"thinking_config": {"thinkingLevel": "minimal"}, "allowance": 256},
+}
+_DEFAULT_GEMINI_TRAITS: dict = {"thinking_config": None, "allowance": 256}
+
+# If a model is retired or unknown (404), these are tried in order. Pin explicit
+# IDs here for production once they are verified; `-latest` aliases can change
+# underneath you.
+FALLBACKS: dict[str, dict[str, list[str]]] = {
+    "gemini": {},
+    "claude": {},
+    "groq": {},
+}
+
 
 def model_for(provider: str, task: str) -> str:
     try:
         return MODELS[provider][task]
     except KeyError as exc:
         raise ValueError(f"No model configured for provider={provider!r} task={task!r}") from exc
+
+
+def timeout_for(task: str) -> float:
+    return TIMEOUTS.get(task, DEFAULT_TIMEOUT)
+
+
+def gemini_traits(model: str) -> dict:
+    return GEMINI_MODEL_TRAITS.get(model, _DEFAULT_GEMINI_TRAITS)

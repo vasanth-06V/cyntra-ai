@@ -5,8 +5,8 @@ objects mocked), and key-decryption failure."""
 import httpx
 import pytest
 from cryptography.fernet import Fernet
-from google.api_core import exceptions as gexc
 
+from app.llm.keystate import cooldowns
 from app.llm.limiter import limiter
 from app.providers import gemini as gemini_mod
 from app.providers import groq as groq_mod
@@ -82,48 +82,62 @@ async def test_embed_quota_failover_uses_backup_gemini_key(client, env):
     assert env.db.rows("notifications", user_id=USER_A)
 
 
-# --------------- real adapters, mocked SDK objects ---------------
+# --------------- real Gemini adapter, scripted HTTP responses ---------------
 
 
-class _ExplodingModel:
-    def __init__(self, exc):
-        self.exc = exc
-
-    async def generate_content_async(self, *a, **kw):
-        raise self.exc
+def _google_error(status: int, message: str, google_status: str, details=None) -> httpx.Response:
+    return httpx.Response(
+        status,
+        json={"error": {"code": status, "message": message, "status": google_status, "details": details or []}},
+    )
 
 
 @pytest.fixture
 def real_gemini(env, monkeypatch):
-    adapter = gemini_mod.GeminiAdapter()
+    """The real adapter and the real wire parsing; only the network is scripted."""
+
+    class Script:
+        response: httpx.Response = httpx.Response(200, json={})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return Script.response
+
+    adapter = gemini_mod.GeminiAdapter(transport=httpx.MockTransport(handler))
     monkeypatch.setitem(registry._ADAPTERS, "gemini", adapter)
-    return adapter
+    return Script
 
 
-def _gemini_raises(monkeypatch, exc):
-    monkeypatch.setattr(gemini_mod, "_build_model", lambda *a, **kw: _ExplodingModel(exc))
-
-
-async def test_real_gemini_adapter_maps_rate_limit_and_overload(client, env, real_gemini, monkeypatch):
+async def test_real_gemini_adapter_maps_rate_limit_overload_and_key_errors(client, env, real_gemini):
     seed_key(env, USER_A, "gemini", "primary", "a")
-    _gemini_raises(monkeypatch, gexc.ResourceExhausted("quota"))
+    real_gemini.response = _google_error(429, "Quota exceeded", "RESOURCE_EXHAUSTED")
     assert (await _chat(client)).status_code == 429
-    _gemini_raises(monkeypatch, gexc.ServiceUnavailable("high demand"))
+    cooldowns.clear()  # the 429 above (correctly) put the key on cooldown
+    real_gemini.response = _google_error(503, "The model is overloaded", "UNAVAILABLE")
     assert (await _chat(client)).status_code == 503
-    _gemini_raises(monkeypatch, gexc.PermissionDenied("denied"))
-    assert (await _chat(client)).status_code == 400
+    real_gemini.response = _google_error(403, "Permission denied", "PERMISSION_DENIED")
+    r = await _chat(client)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "key_rejected"
 
 
-async def test_real_gemini_invalid_argument_key_error_is_not_a_500(client, env, real_gemini, monkeypatch):
+async def test_real_gemini_bad_api_key_is_a_key_error_not_a_500(client, env, real_gemini):
     seed_key(env, USER_A, "gemini", "primary", "a")
-    _gemini_raises(monkeypatch, gexc.InvalidArgument("API key not valid. Please pass a valid API key."))
-    assert (await _chat(client)).status_code != 500
+    real_gemini.response = _google_error(400, "API key not valid. Please pass a valid API key.", "INVALID_ARGUMENT")
+    r = await _chat(client)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "key_rejected"
 
 
-async def test_real_gemini_model_not_found_is_not_a_500(client, env, real_gemini, monkeypatch):
+async def test_real_gemini_bad_request_is_not_blamed_on_the_users_key(client, env, real_gemini):
     seed_key(env, USER_A, "gemini", "primary", "a")
-    _gemini_raises(monkeypatch, gexc.NotFound("models/gemini-x is not found"))
-    assert (await _chat(client)).status_code != 500
+    real_gemini.response = _google_error(400, "The input token count exceeds the maximum", "INVALID_ARGUMENT")
+    r = await _chat(client)
+    assert r.status_code == 502 and r.json()["error"]["code"] == "provider_bad_request"
+
+
+async def test_real_gemini_retired_model_is_a_clear_config_error_and_not_retried(client, env, real_gemini):
+    seed_key(env, USER_A, "gemini", "primary", "a")
+    real_gemini.response = _google_error(404, "models/gemini-x is not found", "NOT_FOUND")
+    r = await _chat(client)
+    assert r.status_code == 503 and r.json()["error"]["code"] == "provider_misconfigured"
 
 
 async def test_real_groq_model_not_found_is_not_a_500(client, env, monkeypatch):

@@ -5,6 +5,7 @@ it undercounts code and non-Latin text). It's used to *cap* and to *test*
 prompt size, not to bill -- real counts come from provider-reported usage.
 """
 
+import re
 from collections.abc import Sequence
 
 from app.providers.base import Message, MessageRole
@@ -71,3 +72,19 @@ def ensure_user_first(
         elif len(body) > 1:
             body = body[1:]
     return leading + body
+
+
+_SENTENCE_END = re.compile(r"[.!?][\"')\]]*(?=\s|$)")
+
+
+def trim_to_sentence(text: str, min_keep: float = 0.4) -> str:
+    """For a reply cut off by the output cap: drop the dangling fragment so
+    the user sees complete sentences. If there is no sentence end in the
+    latter 60% of the text, keep it all and mark the cut with an ellipsis."""
+    text = text.rstrip()
+    ends = [m.end() for m in _SENTENCE_END.finditer(text)]
+    if ends and ends[-1] == len(text):
+        return text  # already ends on a sentence boundary
+    if ends and ends[-1] >= len(text) * min_keep:
+        return text[: ends[-1]].rstrip()
+    return text + " [...]"

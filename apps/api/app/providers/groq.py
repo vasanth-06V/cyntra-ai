@@ -1,26 +1,24 @@
+import time
 from collections.abc import AsyncIterator
 
+import groq
 from groq import AsyncGroq
-from groq import (
-    APIConnectionError,
-    AuthenticationError,
-    InternalServerError,
-    NotFoundError,
-    PermissionDeniedError,
-    RateLimitError,
-)
 
-from app.llm.models import model_for
+from app.llm.models import model_for, timeout_for
 from app.llm.options import LLMOptions, Usage
 from app.providers.base import (
     Message,
     ProviderAdapter,
     ProviderAuthError,
+    ProviderBadRequestError,
+    ProviderConfigError,
     ProviderRateLimitError,
+    ProviderTimeoutError,
     ProviderUnavailableError,
+    retry_after_from,
 )
 
-_TRANSIENT_ERRORS = (InternalServerError, APIConnectionError)
+_FINISH_REASONS = {"stop": "stop", "length": "length", "content_filter": "blocked"}
 
 
 def _request_kwargs(options: LLMOptions) -> dict:
@@ -45,11 +43,37 @@ def _record_usage(usage: Usage | None, response) -> None:
         usage.output_tokens += getattr(reported, "completion_tokens", 0) or 0
 
 
+def map_error(exc: Exception) -> Exception:
+    """SDK exception -> typed provider error."""
+    if isinstance(exc, groq.APITimeoutError):
+        return ProviderTimeoutError(str(exc))
+    if isinstance(exc, groq.APIConnectionError):
+        return ProviderUnavailableError(str(exc))
+    if isinstance(exc, groq.RateLimitError):
+        return ProviderRateLimitError(str(exc), retry_after=retry_after_from(exc))
+    if isinstance(exc, (groq.AuthenticationError, groq.PermissionDeniedError)):
+        return ProviderAuthError(str(exc))
+    if isinstance(exc, groq.NotFoundError):
+        return ProviderConfigError(f"model not found: {exc}")
+    if isinstance(exc, groq.BadRequestError):
+        return ProviderBadRequestError(str(exc))
+    if isinstance(exc, groq.APIStatusError):
+        if exc.status_code >= 500:
+            return ProviderUnavailableError(str(exc), retry_after_from(exc))
+        return ProviderBadRequestError(str(exc))
+    return exc
+
+
 class GroqAdapter(ProviderAdapter):
     name = "groq"
 
+    @staticmethod
+    def _client(api_key: str, timeout: float) -> AsyncGroq:
+        # No SDK-internal retries: the gateway is the only retry layer.
+        return AsyncGroq(api_key=api_key, timeout=timeout, max_retries=0)
+
     async def validate(self, api_key: str) -> bool:
-        client = AsyncGroq(api_key=api_key)
+        client = self._client(api_key, timeout_for("validate"))
         try:
             await client.chat.completions.create(
                 model=model_for(self.name, "validate"),
@@ -57,12 +81,10 @@ class GroqAdapter(ProviderAdapter):
                 messages=[{"role": "user", "content": "hi"}],
             )
             return True
-        except AuthenticationError:
+        except groq.AuthenticationError:
             return False
-        except RateLimitError as exc:
-            raise ProviderRateLimitError(str(exc)) from exc
-        except _TRANSIENT_ERRORS as exc:
-            raise ProviderUnavailableError(str(exc)) from exc
+        except groq.APIError as exc:
+            raise map_error(exc) from exc
 
     async def chat(
         self,
@@ -73,37 +95,49 @@ class GroqAdapter(ProviderAdapter):
         usage: Usage | None = None,
     ) -> AsyncIterator[str]:
         options = options or LLMOptions()
-        client = AsyncGroq(api_key=api_key)
+        timeout = options.timeout_s or timeout_for(options.task)
+        client = self._client(api_key, timeout)
         converted = [{"role": m.role.value, "content": m.content} for m in messages]
         kwargs = _request_kwargs(options)
-        model = model_for(self.name, options.task)
+        model = options.model_override or model_for(self.name, options.task)
+        if usage is not None:
+            usage.model = model
+        started = time.perf_counter()
 
         try:
             if stream:
                 response = await client.chat.completions.create(
                     model=model, messages=converted, stream=True, **kwargs
                 )
+                first = True
+                finish = None
                 async for chunk in response:
-                    delta = chunk.choices[0].delta.content
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    if getattr(choice, "finish_reason", None):
+                        finish = choice.finish_reason
+                    delta = choice.delta.content
                     if delta:
+                        if first and usage is not None:
+                            usage.ttft_ms = round((time.perf_counter() - started) * 1000, 1)
+                        first = False
                         yield delta
                 # Streaming chunks don't carry usage; the gateway falls back
                 # to an estimate, and still counts the request.
                 if usage is not None:
                     usage.requests += 1
+                    usage.finish_reason = _FINISH_REASONS.get(finish or "", "other") if finish else None
             else:
                 response = await client.chat.completions.create(
                     model=model, messages=converted, **kwargs
                 )
                 _record_usage(usage, response)
-                yield response.choices[0].message.content or ""
-        except (AuthenticationError, PermissionDeniedError) as exc:
-            raise ProviderAuthError(str(exc)) from exc
-        except RateLimitError as exc:
-            raise ProviderRateLimitError(str(exc)) from exc
-        except NotFoundError as exc:
-            raise ProviderUnavailableError(f"model not found: {exc}") from exc
-        except _TRANSIENT_ERRORS as exc:
-            raise ProviderUnavailableError(str(exc)) from exc
+                choice = response.choices[0]
+                if usage is not None and getattr(choice, "finish_reason", None):
+                    usage.finish_reason = _FINISH_REASONS.get(choice.finish_reason, "other")
+                yield choice.message.content or ""
+        except groq.APIError as exc:
+            raise map_error(exc) from exc
 
     # No embed_many() override -- Groq has no embeddings API (see base.py).

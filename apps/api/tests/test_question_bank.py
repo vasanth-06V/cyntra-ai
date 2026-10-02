@@ -60,7 +60,7 @@ def stored():
 
 @pytest.fixture(autouse=True)
 def _patch_embed(monkeypatch):
-    async def fake_embed(user_id, texts):
+    async def fake_embed(user_id, texts, kind="doc"):
         return [[0.1, 0.2] for _ in texts]
 
     monkeypatch.setattr(question_bank.gateway, "embed", fake_embed)
@@ -80,7 +80,7 @@ async def test_create_question_denied_for_plain_user(monkeypatch, stored):
 async def test_create_question_requires_gemini_key(monkeypatch, stored):
     monkeypatch.setattr(question_bank, "_is_owner_or_has_permission", lambda *a: _async_value(True))
 
-    async def no_key(user_id, texts):
+    async def no_key(user_id, texts, kind="doc"):
         raise HTTPException(status_code=412, detail="No gemini key configured")
 
     monkeypatch.setattr(question_bank.gateway, "embed", no_key)

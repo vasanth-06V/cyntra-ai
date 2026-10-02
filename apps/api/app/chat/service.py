@@ -9,7 +9,7 @@ from app.llm.budget import ensure_user_first, fit_to_budget
 from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
 
-_OPTIONS = LLMOptions(task="chat")
+_OPTIONS = LLMOptions(task="chat", feature="chat")
 
 # Only the recent window is sent: input stays bounded however long the chat gets.
 _MAX_HISTORY_MESSAGES = 10

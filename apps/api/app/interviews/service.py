@@ -31,9 +31,24 @@ MAX_RAW_TURNS_IN_CONTEXT = 6
 _OVERRUN_GRACE_MINUTES = 5
 
 _SETUP_OPTIONS = LLMOptions(
-    task="interview", json_mode=True, max_output_tokens=450, temperature=0.7
+    task="interview",
+    json_mode=True,
+    max_output_tokens=450,
+    temperature=0.7,
+    feature="interview_setup",
+    prompt_id="interview.setup",
+    prompt_version="1",
 )
-_TURN_OPTIONS = LLMOptions(task="interview", max_output_tokens=160)
+# trim_on_length: a reply cut off by the 160-token cap is shown as complete
+# sentences, never a dangling half sentence.
+_TURN_OPTIONS = LLMOptions(
+    task="interview",
+    max_output_tokens=160,
+    trim_on_length=True,
+    feature="interview_turn",
+    prompt_id="interview.turn",
+    prompt_version="1",
+)
 
 _JD_SETUP_TOKENS = 1200
 _JD_FALLBACK_TOKENS = 300
@@ -97,7 +112,7 @@ async def start_interview(
     interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
 
     try:
-        jd_embedding = (await gateway.embed(user_id, [jd_text]))[0]
+        jd_embedding = (await gateway.embed(user_id, [jd_text], kind="query"))[0]
 
         selected_question_ids: list[str] = []
         if config.question_count > 0:

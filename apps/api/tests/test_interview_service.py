@@ -26,7 +26,7 @@ def _common_mocks(monkeypatch):
     monkeypatch.setattr(
         service, "get_key_row", lambda user_id, provider, slot: _async_value(_gemini_key_row())
     )
-    async def fake_embed(user_id, texts):
+    async def fake_embed(user_id, texts, kind="doc"):
         return [[0.1, 0.2] for _ in texts]
 
     monkeypatch.setattr(service.gateway, "embed", fake_embed)

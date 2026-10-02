@@ -8,7 +8,7 @@ class _CountingAdapter:
     def __init__(self):
         self.calls: list[list[str]] = []
 
-    async def embed_many(self, api_key, texts, usage=None):
+    async def embed_many(self, api_key, texts, usage=None, kind="doc"):
         self.calls.append(list(texts))
         return [[0.0, 1.0] for _ in texts]
 

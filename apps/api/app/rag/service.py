@@ -18,7 +18,15 @@ from app.rag.parsing import extract_text
 
 logger = logging.getLogger(__name__)
 
-_DIGEST_OPTIONS = LLMOptions(task="extract", max_output_tokens=300, temperature=0.2)
+_DIGEST_OPTIONS = LLMOptions(
+    task="extract",
+    max_output_tokens=300,
+    temperature=0.2,
+    feature="resume_digest",
+    priority="background",
+    prompt_id="resume.digest",
+    prompt_version="1",
+)
 _DIGEST_INPUT_TOKENS = 1500
 _MAX_FILE_BYTES = 5 * 1024 * 1024
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request

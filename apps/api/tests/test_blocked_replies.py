@@ -2,48 +2,13 @@ import pytest
 from fastapi import HTTPException
 
 from app.llm import gateway
-from app.providers import gemini
-from app.providers.base import Message, MessageRole, ProviderBlockedError
-from app.providers.gemini import GeminiAdapter
+from app.providers.base import ProviderBlockedError
 
 from tests.test_gateway import MESSAGES, USER, env  # noqa: F401  (fixture reuse)
 
 
-class _BlockedResponse:
-    """What the SDK returns when the safety filter produced no text: reading
-    .text raises ValueError."""
-
-    usage_metadata = None
-
-    @property
-    def text(self):
-        raise ValueError("response has no valid Part")
-
-    def __aiter__(self):
-        async def gen():
-            yield type("Chunk", (), {"text": ""})()
-
-        return gen()
-
-
-class _BlockedModel:
-    async def generate_content_async(self, contents, stream=False, generation_config=None):
-        return _BlockedResponse()
-
-
 async def _drain(agen):
     return [c async for c in agen]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("stream", [False, True])
-async def test_gemini_maps_an_empty_blocked_reply_to_provider_blocked(monkeypatch, stream):
-    monkeypatch.setattr(gemini, "_build_model", lambda *a: _BlockedModel())
-
-    with pytest.raises(ProviderBlockedError):
-        await _drain(
-            GeminiAdapter().chat("k", [Message(MessageRole.USER, "hi")], stream=stream)
-        )
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ _MAX_INPUT_TOKENS = 1800
 
 
 async def embed_texts(
-    api_key: str, texts: list[str], usage: Usage | None = None
+    api_key: str, texts: list[str], usage: Usage | None = None, kind: str = "doc"
 ) -> list[list[float]]:
     """Always Gemini -- the RAG layer routes embeddings through Gemini
     regardless of which provider the user chats with, since it's the only
@@ -18,9 +18,13 @@ async def embed_texts(
 
     The whole list goes out as one batched request (the free tier counts
     requests, not texts: a resume's ~8 chunks or an ATS run's ~20 keywords
-    used to cost that many requests each)."""
+    used to cost that many requests each).
+
+    kind="doc" for text that will be searched (resume chunks, bank questions),
+    "query" for text used to search with (a JD, a keyword): the model embeds
+    the two differently on purpose."""
     prepared = [truncate(t, _MAX_INPUT_TOKENS) for t in texts]
-    return await _gemini.embed_many(api_key, prepared, usage=usage)
+    return await _gemini.embed_many(api_key, prepared, usage=usage, kind=kind)
 
 
 async def embed_text(api_key: str, text: str) -> list[float]:
