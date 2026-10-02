@@ -1,51 +1,25 @@
-import asyncio
+from fastapi import status
 
-from fastapi import HTTPException, status
-
-from app.core.db import get_supabase
+from app.core.errors import AppError
+from app.db import questions as questions_repo
 from app.llm import gateway
 
 PERMISSION = "manage_question_bank"
 
 
 async def _is_owner_or_has_permission(user_id: str, permission: str) -> bool:
-    supabase = get_supabase()
-
-    def _query_role():
-        return (
-            supabase.table("roles")
-            .select("role")
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    role_result = await asyncio.to_thread(_query_role)
-    role = role_result.data["role"] if role_result and role_result.data else None
+    role = await questions_repo.get_role(user_id)
     if role == "owner":
         return True
     if role != "admin":
         return False
-
-    def _query_permission():
-        return (
-            supabase.table("admin_permissions")
-            .select("id")
-            .eq("admin_id", user_id)
-            .eq("permission_key", permission)
-            .maybe_single()
-            .execute()
-        )
-
-    perm_result = await asyncio.to_thread(_query_permission)
-    return bool(perm_result and perm_result.data)
+    return await questions_repo.has_permission(user_id, permission)
 
 
 async def _require_permission(user_id: str) -> None:
     if not await _is_owner_or_has_permission(user_id, PERMISSION):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not permitted to manage the question bank",
+        raise AppError(
+            status.HTTP_403_FORBIDDEN, "forbidden", "Not permitted to manage the question bank"
         )
 
 
@@ -59,44 +33,24 @@ async def create_question(
 ) -> dict:
     await _require_permission(user_id)
     embedding = await _embed_question(user_id, question)
-
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("question_bank")
-            .insert(
-                {
-                    "type": interview_type,
-                    "question": question,
-                    "test_cases": test_cases,
-                    "tags": tags or [],
-                    "embedding": embedding,
-                    "created_by": user_id,
-                }
-            )
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_insert)
-    return result.data[0]
+    return await questions_repo.insert_question(
+        {
+            "type": interview_type,
+            "question": question,
+            "test_cases": test_cases,
+            "tags": tags or [],
+            "embedding": embedding,
+            "created_by": user_id,
+        }
+    )
 
 
-async def list_questions(user_id: str, interview_type: str | None = None) -> list[dict]:
+async def list_questions(
+    user_id: str, interview_type: str | None = None, limit: int = 200, offset: int = 0
+) -> list[dict]:
     # Test cases are the "answer key"; only people who manage the bank see it.
     await _require_permission(user_id)
-    supabase = get_supabase()
-
-    def _query():
-        q = supabase.table("question_bank").select(
-            "id, type, question, test_cases, tags, created_by, created_at"
-        )
-        if interview_type:
-            q = q.eq("type", interview_type)
-        return q.order("created_at", desc=True).execute()
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+    return await questions_repo.list_questions(interview_type, limit, offset)
 
 
 async def update_question(
@@ -118,28 +72,14 @@ async def update_question(
         updates["tags"] = tags
 
     if not updates:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Nothing to update"
-        )
+        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_failed", "Nothing to update")
 
-    supabase = get_supabase()
-
-    def _update():
-        return (
-            supabase.table("question_bank").update(updates).eq("id", question_id).execute()
-        )
-
-    result = await asyncio.to_thread(_update)
-    if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
-    return result.data[0]
+    row = await questions_repo.update_question(question_id, updates)
+    if not row:
+        raise AppError(status.HTTP_404_NOT_FOUND, "not_found", "Question not found")
+    return row
 
 
 async def delete_question(user_id: str, question_id: str) -> None:
     await _require_permission(user_id)
-    supabase = get_supabase()
-
-    def _delete():
-        return supabase.table("question_bank").delete().eq("id", question_id).execute()
-
-    await asyncio.to_thread(_delete)
+    await questions_repo.delete_question(question_id)

@@ -1,5 +1,6 @@
 import pytest
 
+from app.db import usage as usage_repo
 from app.llm import usage
 from app.llm.options import Usage
 
@@ -24,7 +25,7 @@ class _FakeSupabase:
 @pytest.mark.asyncio
 async def test_records_provider_reported_counts(monkeypatch):
     fake = _FakeSupabase()
-    monkeypatch.setattr(usage, "get_supabase", lambda: fake)
+    monkeypatch.setattr(usage_repo, "get_supabase", lambda: fake)
 
     await usage.record("u1", "gemini", "chat", Usage(requests=1, input_tokens=120, output_tokens=30))
 
@@ -43,7 +44,7 @@ async def test_records_provider_reported_counts(monkeypatch):
 @pytest.mark.asyncio
 async def test_falls_back_to_estimates_when_the_provider_reported_no_tokens(monkeypatch):
     fake = _FakeSupabase()
-    monkeypatch.setattr(usage, "get_supabase", lambda: fake)
+    monkeypatch.setattr(usage_repo, "get_supabase", lambda: fake)
 
     await usage.record(
         "u1", "groq", "chat", Usage(requests=1), est_input_tokens=200, est_output_tokens=40
@@ -57,7 +58,7 @@ async def test_falls_back_to_estimates_when_the_provider_reported_no_tokens(monk
 @pytest.mark.asyncio
 async def test_counts_at_least_one_request_even_if_the_adapter_did_not(monkeypatch):
     fake = _FakeSupabase()
-    monkeypatch.setattr(usage, "get_supabase", lambda: fake)
+    monkeypatch.setattr(usage_repo, "get_supabase", lambda: fake)
 
     await usage.record("u1", "gemini", "embed", Usage())
 
@@ -66,7 +67,7 @@ async def test_counts_at_least_one_request_even_if_the_adapter_did_not(monkeypat
 
 @pytest.mark.asyncio
 async def test_a_bookkeeping_failure_never_breaks_the_users_request(monkeypatch):
-    monkeypatch.setattr(usage, "get_supabase", lambda: _FakeSupabase(error=RuntimeError("db down")))
+    monkeypatch.setattr(usage_repo, "get_supabase", lambda: _FakeSupabase(error=RuntimeError("db down")))
 
     await usage.record("u1", "gemini", "chat", Usage(requests=1))  # must not raise
 
@@ -96,7 +97,7 @@ async def test_usage_today_filters_by_user_and_day(monkeypatch):
             seen["table"] = name
             return _Q()
 
-    monkeypatch.setattr(router, "get_supabase", lambda: _DB())
+    monkeypatch.setattr(usage_repo, "get_supabase", lambda: _DB())
 
     rows = await router.usage_today("u1")
 

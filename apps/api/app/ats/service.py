@@ -7,31 +7,14 @@ from app.core.errors import AppError
 from app.ats.feedback import generate_feedback
 from app.ats.requirements_extractor import extract_requirements
 from app.ats.scorer import composite_score, formatting_score, keyword_score, missing_terms
-from app.core.db import get_supabase
-from app.keys.service import get_key_row
+from app.db import resumes as resumes_repo
+from app.db.keys import get_key_row
 from app.llm import gateway
 from app.rag.retrieval import match_resume_chunks
 
 
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("resumes")
-            .select("id, parsed_text")
-            .eq("id", resume_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    if not result or not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
-    if not result.data.get("parsed_text"):
-        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "resume_not_processed", "This resume hasn't finished processing yet")
-    return result.data
+    return await resumes_repo.require_processed_resume(user_id, resume_id, "id, parsed_text")
 
 
 async def _semantic_score(user_id: str, resume_id: str, requirements: dict) -> float:

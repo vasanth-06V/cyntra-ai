@@ -28,7 +28,7 @@ from fastapi import HTTPException, status
 from app.core.errors import AppError
 
 from app.core.security import decrypt_key
-from app.keys.service import get_key_row, notify_user
+from app.db.keys import get_key_row, insert_notification as notify_user
 from app.llm import usage as usage_log
 from app.llm.budget import estimate_messages_tokens, estimate_tokens
 from app.llm.limiter import limiter

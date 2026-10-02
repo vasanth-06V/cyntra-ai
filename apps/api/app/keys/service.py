@@ -1,12 +1,10 @@
-import asyncio
 from datetime import UTC, datetime
 
-from fastapi import HTTPException, status
+from fastapi import status
 
 from app.core.errors import AppError
-
-from app.core.db import get_supabase
 from app.core.security import encrypt_key
+from app.db import keys as keys_repo
 from app.providers.base import ProviderRateLimitError, ProviderUnavailableError
 from app.providers.registry import get_adapter
 
@@ -19,96 +17,33 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
     try:
         is_valid = await adapter.validate(api_key)
     except ProviderRateLimitError as exc:
-        raise AppError(status.HTTP_429_TOO_MANY_REQUESTS, "provider_rate_limited", f"{provider.capitalize()} is rate-limiting right now, so the key couldn't be checked. Nothing was saved -- try again in a minute.") from exc
+        raise AppError(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "provider_rate_limited",
+            f"{provider.capitalize()} is rate-limiting right now, so the key couldn't be checked. Nothing was saved -- try again in a minute.",
+        ) from exc
     except ProviderUnavailableError as exc:
-        raise AppError(status.HTTP_503_SERVICE_UNAVAILABLE, "provider_overloaded", f"{provider.capitalize()} is temporarily unavailable, so the key couldn't be checked. Nothing was saved -- try again shortly.") from exc
+        raise AppError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "provider_overloaded",
+            f"{provider.capitalize()} is temporarily unavailable, so the key couldn't be checked. Nothing was saved -- try again shortly.",
+        ) from exc
 
     if not is_valid:
-        raise AppError(status.HTTP_400_BAD_REQUEST, "key_rejected", f"{provider.capitalize()} rejected this key -- double-check it's correct. Nothing was saved.")
-
-    supabase = get_supabase()
-    encrypted = encrypt_key(api_key)
-
-    def _upsert():
-        return (
-            supabase.table("provider_keys")
-            .upsert(
-                {
-                    "user_id": user_id,
-                    "provider": provider,
-                    "slot": slot,
-                    "encrypted_key": encrypted,
-                    "is_valid": True,
-                    "last_validated_at": datetime.now(UTC).isoformat(),
-                },
-                on_conflict="user_id,provider,slot",
-            )
-            .execute()
+        raise AppError(
+            status.HTTP_400_BAD_REQUEST,
+            "key_rejected",
+            f"{provider.capitalize()} rejected this key -- double-check it's correct. Nothing was saved.",
         )
 
-    result = await asyncio.to_thread(_upsert)
-    return result.data[0]
+    return await keys_repo.upsert_key(
+        user_id, provider, slot, encrypt_key(api_key), datetime.now(UTC).isoformat()
+    )
 
 
 async def list_keys(user_id: str) -> list[dict]:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("provider_keys")
-            .select("id, provider, slot, is_valid, last_validated_at")
-            .eq("user_id", user_id)
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+    return await keys_repo.list_keys(user_id)
 
 
 async def delete_key(user_id: str, key_id: str) -> None:
-    supabase = get_supabase()
-
-    def _delete():
-        return (
-            supabase.table("provider_keys")
-            .delete()
-            .eq("id", key_id)
-            .eq("user_id", user_id)
-            .execute()
-        )
-
-    await asyncio.to_thread(_delete)
-
-
-async def get_key_row(user_id: str, provider: str, slot: str) -> dict | None:
-    """Public lookup used by the LLM gateway (llm/gateway.py), which owns
-    primary -> backup failover."""
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("provider_keys")
-            .select("id, encrypted_key")
-            .eq("user_id", user_id)
-            .eq("provider", provider)
-            .eq("slot", slot)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data if result else None
-
-
-async def notify_user(user_id: str, message: str) -> None:
-    """Public, cross-module notification helper -- see get_key_row."""
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("notifications")
-            .insert({"user_id": user_id, "message": message})
-            .execute()
-        )
-
-    await asyncio.to_thread(_insert)
+    await keys_repo.delete_key(user_id, key_id)

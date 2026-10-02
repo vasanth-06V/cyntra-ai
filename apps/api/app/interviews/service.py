@@ -1,18 +1,17 @@
-import asyncio
 import json
 import logging
 import re
 from datetime import UTC, datetime, timedelta
 
-from fastapi import HTTPException, status
+from fastapi import status
 
 from app.core.errors import AppError
-
-from app.core.db import get_supabase
+from app.db import interviews as interviews_repo
+from app.db import resumes as resumes_repo
 from app.interviews import summarizer
 from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase_for_elapsed
 from app.interviews.types import get_config
-from app.keys.service import get_key_row
+from app.db.keys import get_key_row
 from app.llm import gateway
 from app.llm.budget import ensure_user_first, fit_to_budget, truncate
 from app.llm.json_utils import extract_json
@@ -45,132 +44,19 @@ _QUESTION_TOKEN_CAP = 400
 _PROMPT_BUDGET_TOKENS = 1200
 
 
+# Thin aliases onto the db layer. Kept as module-level names so the
+# orchestration below reads naturally (and tests can replace one step).
+_get_owned_interview = interviews_repo.get_owned_interview
+_update_interview = interviews_repo.update_interview
+_append_transcript = interviews_repo.append_transcript
+_next_turn_index = interviews_repo.next_turn_index
+_recent_turns = interviews_repo.recent_turns
+_get_question_text = interviews_repo.question_text
+_create_interview_row = interviews_repo.create_interview
+
+
 async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("resumes")
-            .select("id, parsed_text, digest")
-            .eq("id", resume_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    if not result or not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
-    if not result.data.get("parsed_text"):
-        raise AppError(status.HTTP_422_UNPROCESSABLE_ENTITY, "resume_not_processed", "This resume hasn't finished processing yet")
-    return result.data
-
-
-async def _get_owned_interview(user_id: str, interview_id: str) -> dict:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("interviews")
-            .select("*")
-            .eq("id", interview_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    if not result or not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview not found")
-    return result.data
-
-
-async def _create_interview_row(
-    user_id: str, interview_type: str, jd_text: str, resume_id: str, provider: str
-) -> str:
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("interviews")
-            .insert(
-                {
-                    "user_id": user_id,
-                    "type": interview_type,
-                    "jd_text": jd_text,
-                    "resume_id": resume_id,
-                    "provider": provider,
-                    "status": "setting_up",
-                }
-            )
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_insert)
-    return result.data[0]["id"]
-
-
-async def _update_interview(interview_id: str, fields: dict) -> None:
-    supabase = get_supabase()
-
-    def _update():
-        return supabase.table("interviews").update(fields).eq("id", interview_id).execute()
-
-    await asyncio.to_thread(_update)
-
-
-async def _append_transcript(interview_id: str, turn_index: int, speaker: str, text: str) -> None:
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("interview_transcripts")
-            .insert(
-                {
-                    "interview_id": interview_id,
-                    "turn_index": turn_index,
-                    "speaker": speaker,
-                    "text": text,
-                }
-            )
-            .execute()
-        )
-
-    await asyncio.to_thread(_insert)
-
-
-async def _next_turn_index(interview_id: str) -> int:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("interview_transcripts")
-            .select("turn_index")
-            .eq("interview_id", interview_id)
-            .order("turn_index", desc=True)
-            .limit(1)
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return (result.data[0]["turn_index"] + 1) if result.data else 0
-
-
-async def _recent_turns(interview_id: str, limit: int) -> list[dict]:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("interview_transcripts")
-            .select("speaker, text")
-            .eq("interview_id", interview_id)
-            .order("turn_index", desc=True)
-            .limit(limit)
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return list(reversed(result.data))
+    return await resumes_repo.require_processed_resume(user_id, resume_id, "id, parsed_text, digest")
 
 
 _OPENING_FIELD = re.compile(r'"opening"\s*:\s*"((?:[^"\\]|\\.)*)')
@@ -191,22 +77,6 @@ def _salvage_opening(raw: str) -> str:
         except ValueError:
             return match.group(1).strip()
     return _FALLBACK_OPENING
-
-
-async def _get_question_text(question_id: str) -> str | None:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("question_bank")
-            .select("question")
-            .eq("id", question_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return (result.data or {}).get("question") if result else None
 
 
 def _elapsed_minutes(interview: dict) -> float:
@@ -393,34 +263,10 @@ async def get_interview(user_id: str, interview_id: str) -> dict:
     return await _get_owned_interview(user_id, interview_id)
 
 
-async def list_interviews(user_id: str) -> list[dict]:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("interviews")
-            .select("id, type, status, phase, provider, resume_id, started_at, ends_at, created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+async def list_interviews(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    return await interviews_repo.list_interviews(user_id, limit, offset)
 
 
 async def get_transcript(user_id: str, interview_id: str) -> list[dict]:
     await _get_owned_interview(user_id, interview_id)
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("interview_transcripts")
-            .select("id, turn_index, speaker, text, created_at")
-            .eq("interview_id", interview_id)
-            .order("turn_index")
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+    return await interviews_repo.transcript(interview_id)

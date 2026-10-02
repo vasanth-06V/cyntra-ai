@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 
 from app.core.ids import UuidStr
+from app.core.pagination import Page, large_page_params, page_params
 from app.core.security import AuthenticatedUser, get_current_user
 from app.core.throttle import limited
 from app.interviews import question_bank, service
@@ -37,9 +38,13 @@ async def create_question(body: QuestionIn, user: AuthenticatedUser = Depends(ge
 
 @router.get("/question-bank", response_model=list[QuestionOut])
 async def list_questions(
-    type: InterviewType | None = None, user: AuthenticatedUser = Depends(get_current_user)
+    type: InterviewType | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+    page: Page = Depends(large_page_params),
 ):
-    return await question_bank.list_questions(user.user_id, type.value if type else None)
+    return await question_bank.list_questions(
+        user.user_id, type.value if type else None, page.limit, page.offset
+    )
 
 
 @router.patch("/question-bank/{question_id}", response_model=QuestionOut)
@@ -73,8 +78,10 @@ async def start_interview(
 
 
 @router.get("", response_model=list[InterviewOut])
-async def list_interviews(user: AuthenticatedUser = Depends(get_current_user)):
-    return await service.list_interviews(user.user_id)
+async def list_interviews(
+    user: AuthenticatedUser = Depends(get_current_user), page: Page = Depends(page_params)
+):
+    return await service.list_interviews(user.user_id, page.limit, page.offset)
 
 
 @router.get("/{interview_id}", response_model=InterviewOut)

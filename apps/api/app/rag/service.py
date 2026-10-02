@@ -5,9 +5,9 @@ from fastapi import HTTPException, status
 
 from app.core.errors import AppError
 
-from app.core.db import get_supabase
 from app.core.storage import download_bytes
-from app.keys.service import get_key_row
+from app.db import resumes as resumes_repo
+from app.db.keys import get_key_row
 from app.rag.chunking import chunk_text
 from app.llm import gateway
 from app.llm.budget import truncate
@@ -39,22 +39,7 @@ async def _make_digest(user_id: str, text: str) -> str | None:
 
 
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("resumes")
-            .select("id, file_key")
-            .eq("id", resume_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    if not result or not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
-    return result.data
+    return await resumes_repo.require_resume(user_id, resume_id, "id, file_key")
 
 
 async def process_resume(user_id: str, resume_id: str) -> int:
@@ -101,26 +86,9 @@ async def process_resume(user_id: str, resume_id: str) -> int:
 
     digest = await _make_digest(user_id, text)
 
-    supabase = get_supabase()
-
-    def _store():
-        supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
-        supabase.table("resume_chunks").insert(
-            [
-                {
-                    "resume_id": resume_id,
-                    "chunk_index": i,
-                    "content": chunk,
-                    "embedding": embedding,
-                }
-                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
-            ]
-        ).execute()
-        # Last, so a failure above leaves the resume "unprocessed" (retryable)
-        # rather than marked processed with no chunks to search.
-        supabase.table("resumes").update({"parsed_text": text, "digest": digest}).eq(
-            "id", resume_id
-        ).execute()
-
-    await asyncio.to_thread(_store)
+    rows = [
+        {"resume_id": resume_id, "chunk_index": i, "content": chunk, "embedding": embedding}
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+    ]
+    await resumes_repo.replace_chunks_and_finish(resume_id, rows, text, digest)
     return len(chunks)

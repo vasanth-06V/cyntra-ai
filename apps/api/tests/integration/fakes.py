@@ -70,6 +70,7 @@ class _Query:
         self._filters: list[tuple] = []
         self._order: tuple[str, bool] | None = None
         self._limit: int | None = None
+        self._offset: int = 0
         self._single = False
 
     # --- builder ---
@@ -108,6 +109,11 @@ class _Query:
 
     def limit(self, n, **_):
         self._limit = n
+        return self
+
+    def range(self, start, end, **_):
+        self._offset = start
+        self._limit = end - start + 1
         return self
 
     def maybe_single(self):
@@ -159,6 +165,8 @@ class _Query:
             if self._order:
                 col, desc = self._order
                 snapshot.sort(key=lambda r: r.get(col), reverse=desc)
+            if self._offset:
+                snapshot = snapshot[self._offset :]
             if self._limit is not None:
                 snapshot = snapshot[: self._limit]
             out = [self._project(r) for r in snapshot]

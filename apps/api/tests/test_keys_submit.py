@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
+from app.db import keys as keys_repo
 from app.keys import service
 from app.providers.base import ProviderRateLimitError, ProviderUnavailableError
 
@@ -39,7 +40,7 @@ class _DB:
 @pytest.fixture
 def db(monkeypatch):
     fake = _DB()
-    monkeypatch.setattr(service, "get_supabase", lambda: fake)
+    monkeypatch.setattr(keys_repo, "get_supabase", lambda: fake)
     monkeypatch.setattr(service, "encrypt_key", lambda k: f"enc:{k}")
     return fake
 

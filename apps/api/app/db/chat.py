@@ -1,0 +1,84 @@
+from app.core.db import get_supabase
+from app.db.base import run
+
+
+async def create_conversation(user_id: str, title: str | None) -> dict:
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("conversations").insert({"user_id": user_id, "title": title}).execute()
+
+    return (await run(_q)).data[0]
+
+
+async def list_conversations(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("conversations")
+            .select("id, title, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+
+    return (await run(_q)).data
+
+
+async def get_owned_conversation(user_id: str, conversation_id: str) -> dict | None:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("conversations")
+            .select("id")
+            .eq("id", conversation_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+
+    result = await run(_q)
+    return result.data if result and result.data else None
+
+
+async def list_messages(conversation_id: str, limit: int | None = None) -> list[dict]:
+    """Oldest-first. With `limit`, the *latest* `limit` messages (still oldest-first)."""
+    supabase = get_supabase()
+
+    def _q():
+        q = (
+            supabase.table("chat_messages")
+            .select("id, role, provider, content, created_at")
+            .eq("conversation_id", conversation_id)
+        )
+        if limit is None:
+            return q.order("created_at").execute()
+        return q.order("created_at", desc=True).limit(limit).execute()
+
+    data = (await run(_q)).data
+    return data if limit is None else list(reversed(data))
+
+
+async def append_message(
+    conversation_id: str, role: str, content: str, provider: str | None = None
+) -> dict:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("chat_messages")
+            .insert(
+                {
+                    "conversation_id": conversation_id,
+                    "role": role,
+                    "provider": provider,
+                    "content": content,
+                }
+            )
+            .execute()
+        )
+
+    return (await run(_q)).data[0]

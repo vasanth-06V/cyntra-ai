@@ -1,6 +1,4 @@
-import asyncio
-
-from app.core.db import get_supabase
+from app.db import interviews as interviews_repo
 from app.llm import gateway
 from app.llm.budget import truncate
 from app.llm.options import LLMOptions
@@ -20,20 +18,8 @@ async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> 
     transcript again). `interview` is the row already loaded by the caller."""
     interview_id = interview["id"]
     through = interview.get("summarized_through_turn") or 0
-    supabase = get_supabase()
 
-    def _fetch_new_turns():
-        return (
-            supabase.table("interview_transcripts")
-            .select("turn_index, speaker, text")
-            .eq("interview_id", interview_id)
-            .gte("turn_index", through)
-            .order("turn_index")
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_fetch_new_turns)
-    turns = result.data or []
+    turns = await interviews_repo.turns_since(interview_id, through)
     if len(turns) < SUMMARIZE_EVERY_N_TURNS:
         return
 
@@ -47,12 +33,10 @@ async def maybe_update_summary(interview: dict, user_id: str, provider: str) -> 
         user_id, provider, [Message(role=MessageRole.USER, content=prompt)], _OPTIONS
     )
 
-    fields = {
-        "running_summary": summary.strip(),
-        "summarized_through_turn": turns[-1]["turn_index"] + 1,
-    }
-
-    def _store():
-        return supabase.table("interviews").update(fields).eq("id", interview_id).execute()
-
-    await asyncio.to_thread(_store)
+    await interviews_repo.update_interview(
+        interview_id,
+        {
+            "running_summary": summary.strip(),
+            "summarized_through_turn": turns[-1]["turn_index"] + 1,
+        },
+    )

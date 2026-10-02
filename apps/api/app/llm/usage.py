@@ -1,7 +1,6 @@
-import asyncio
 import logging
 
-from app.core.db import get_supabase
+from app.db import usage as usage_repo
 from app.llm.options import Usage
 
 logger = logging.getLogger(__name__)
@@ -31,10 +30,7 @@ async def record(
         "p_output": usage.output_tokens or est_output_tokens,
     }
 
-    def _call():
-        return get_supabase().rpc("record_llm_usage", params).execute()
-
     try:
-        await asyncio.to_thread(_call)
+        await usage_repo.record_usage(params)
     except Exception:
         logger.warning("Could not record LLM usage", exc_info=True)

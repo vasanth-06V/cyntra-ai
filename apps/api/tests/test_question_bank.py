@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
+from app.db import questions as questions_repo
 from app.interviews import question_bank
 
 
@@ -93,7 +94,7 @@ async def test_create_question_requires_gemini_key(monkeypatch, stored):
 @pytest.mark.asyncio
 async def test_create_question_succeeds_for_owner_and_embeds(monkeypatch, stored):
     monkeypatch.setattr(question_bank, "_is_owner_or_has_permission", lambda *a: _async_value(True))
-    monkeypatch.setattr(question_bank, "get_supabase", lambda: _FakeSupabase(stored))
+    monkeypatch.setattr(questions_repo, "get_supabase", lambda: _FakeSupabase(stored))
 
     result = await question_bank.create_question(
         "owner-1", "coding", "Reverse a linked list", [{"input": "1,2,3", "output": "3,2,1"}], ["lists"]
@@ -129,7 +130,7 @@ async def test_is_owner_or_has_permission_true_for_owner(monkeypatch, stored):
         def table(self, name):
             return _RoleTable(name, stored)
 
-    monkeypatch.setattr(question_bank, "get_supabase", lambda: _Supabase())
+    monkeypatch.setattr(questions_repo, "get_supabase", lambda: _Supabase())
 
     assert await question_bank._is_owner_or_has_permission("owner-1", "manage_question_bank")
 
@@ -147,6 +148,6 @@ async def test_is_owner_or_has_permission_false_for_plain_user(monkeypatch, stor
         def table(self, name):
             return _RoleTable(name, stored)
 
-    monkeypatch.setattr(question_bank, "get_supabase", lambda: _Supabase())
+    monkeypatch.setattr(questions_repo, "get_supabase", lambda: _Supabase())
 
     assert not await question_bank._is_owner_or_has_permission("user-1", "manage_question_bank")

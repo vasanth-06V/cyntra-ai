@@ -24,7 +24,7 @@ def stored(monkeypatch):
     monkeypatch.setattr(service, "_require_owned_conversation", lambda *a, **kw: _async_none())
     monkeypatch.setattr(service, "_append_message", fake_append)
     monkeypatch.setattr(
-        service,
+        service.chat_repo,
         "list_messages",
         lambda *a, **kw: _async_value(
             [
@@ -122,8 +122,8 @@ async def test_history_sent_to_the_model_is_windowed(monkeypatch):
     async def owned(*a):
         return {"id": "c"}
 
-    async def listing(*a):
-        return rows
+    async def listing(conversation_id, limit=None):
+        return rows[-limit:] if limit else rows  # the repo applies the window in SQL
 
     async def append(*a, **k):
         return {}
@@ -133,7 +133,7 @@ async def test_history_sent_to_the_model_is_windowed(monkeypatch):
         yield "ok"
 
     monkeypatch.setattr(service, "_require_owned_conversation", owned)
-    monkeypatch.setattr(service, "list_messages", listing)
+    monkeypatch.setattr(service.chat_repo, "list_messages", listing)
     monkeypatch.setattr(service, "_append_message", append)
     monkeypatch.setattr(service.gateway, "stream", fake_stream)
 

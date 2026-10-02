@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.db import interviews as interviews_repo
 from app.interviews import service, summarizer
 from app.llm.budget import estimate_messages_tokens
 from app.llm.json_utils import extract_json
@@ -190,7 +191,7 @@ def _turns(start, n):
 @pytest.mark.asyncio
 async def test_summarizer_skips_until_enough_new_turns(monkeypatch):
     fake = _DB(_turns(8, 7))
-    monkeypatch.setattr(summarizer, "get_supabase", lambda: fake)
+    monkeypatch.setattr(interviews_repo, "get_supabase", lambda: fake)
     called = []
 
     async def fake_complete(*a, **k):
@@ -210,7 +211,7 @@ async def test_summarizer_skips_until_enough_new_turns(monkeypatch):
 @pytest.mark.asyncio
 async def test_summarizer_is_incremental_and_advances_marker(monkeypatch):
     fake = _DB(_turns(8, 8))
-    monkeypatch.setattr(summarizer, "get_supabase", lambda: fake)
+    monkeypatch.setattr(interviews_repo, "get_supabase", lambda: fake)
     prompts = []
 
     async def fake_complete(user_id, provider, messages, options=None):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.chat import service
@@ -9,6 +9,7 @@ from app.chat.models import (
     SendMessageRequest,
 )
 from app.core.ids import UuidStr
+from app.core.pagination import Page, page_params
 from app.core.security import AuthenticatedUser, get_current_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -24,15 +25,20 @@ async def create_conversation(
 
 
 @router.get("/conversations", response_model=list[ConversationOut])
-async def list_conversations(user: AuthenticatedUser = Depends(get_current_user)):
-    return await service.list_conversations(user.user_id)
+async def list_conversations(
+    user: AuthenticatedUser = Depends(get_current_user), page: Page = Depends(page_params)
+):
+    return await service.list_conversations(user.user_id, page.limit, page.offset)
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[ChatMessageOut])
 async def list_messages(
-    conversation_id: UuidStr, user: AuthenticatedUser = Depends(get_current_user)
+    conversation_id: UuidStr,
+    user: AuthenticatedUser = Depends(get_current_user),
+    limit: int = Query(service.DEFAULT_MESSAGE_PAGE, ge=1, le=500),
 ):
-    return await service.list_messages(user.user_id, conversation_id)
+    """The latest `limit` messages, oldest first."""
+    return await service.list_messages(user.user_id, conversation_id, limit)
 
 
 @router.post("/conversations/{conversation_id}/messages")

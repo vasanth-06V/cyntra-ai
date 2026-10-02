@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
+from app.db import resumes as resumes_repo
 from app.rag import service
 
 
@@ -22,7 +23,7 @@ def _common_mocks(monkeypatch):
     def fake_store_setup(monkeypatch_inner=None):
         pass
 
-    monkeypatch.setattr(service, "get_supabase", lambda: _FakeSupabase(stored))
+    monkeypatch.setattr(resumes_repo, "get_supabase", lambda: _FakeSupabase(stored))
     return stored
 
 

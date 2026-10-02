@@ -1,9 +1,9 @@
-import asyncio
 from collections.abc import AsyncIterator
 
-from fastapi import HTTPException, status
+from fastapi import status
 
-from app.core.db import get_supabase
+from app.core.errors import AppError
+from app.db import chat as chat_repo
 from app.llm import gateway
 from app.llm.budget import ensure_user_first, fit_to_budget
 from app.llm.options import LLMOptions
@@ -15,96 +15,34 @@ _OPTIONS = LLMOptions(task="chat")
 _MAX_HISTORY_MESSAGES = 10
 _HISTORY_TOKEN_BUDGET = 2000
 
+# What the UI loads when it opens a conversation (newest N, shown oldest-first).
+DEFAULT_MESSAGE_PAGE = 200
+
 
 async def create_conversation(user_id: str, title: str | None) -> dict:
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("conversations")
-            .insert({"user_id": user_id, "title": title})
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_insert)
-    return result.data[0]
+    return await chat_repo.create_conversation(user_id, title)
 
 
-async def list_conversations(user_id: str) -> list[dict]:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("conversations")
-            .select("id, title, created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+async def list_conversations(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    return await chat_repo.list_conversations(user_id, limit, offset)
 
 
 async def _require_owned_conversation(user_id: str, conversation_id: str) -> dict:
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("conversations")
-            .select("id")
-            .eq("id", conversation_id)
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    if not result or not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
-        )
-    return result.data
+    row = await chat_repo.get_owned_conversation(user_id, conversation_id)
+    if not row:
+        raise AppError(status.HTTP_404_NOT_FOUND, "not_found", "Conversation not found")
+    return row
 
 
-async def list_messages(user_id: str, conversation_id: str) -> list[dict]:
+async def list_messages(user_id: str, conversation_id: str, limit: int = DEFAULT_MESSAGE_PAGE) -> list[dict]:
     await _require_owned_conversation(user_id, conversation_id)
-    supabase = get_supabase()
-
-    def _query():
-        return (
-            supabase.table("chat_messages")
-            .select("id, role, provider, content, created_at")
-            .eq("conversation_id", conversation_id)
-            .order("created_at")
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_query)
-    return result.data
+    return await chat_repo.list_messages(conversation_id, limit)
 
 
 async def _append_message(
     conversation_id: str, role: str, content: str, provider: str | None = None
 ) -> dict:
-    supabase = get_supabase()
-
-    def _insert():
-        return (
-            supabase.table("chat_messages")
-            .insert(
-                {
-                    "conversation_id": conversation_id,
-                    "role": role,
-                    "provider": provider,
-                    "content": content,
-                }
-            )
-            .execute()
-        )
-
-    result = await asyncio.to_thread(_insert)
-    return result.data[0]
+    return await chat_repo.append_message(conversation_id, role, content, provider)
 
 
 def _row_to_message(row: dict) -> Message:
@@ -115,15 +53,16 @@ def _row_to_message(row: dict) -> Message:
 async def stream_reply(
     user_id: str, conversation_id: str, provider: str, user_content: str
 ) -> AsyncIterator[str]:
-    """Persists the user's message, builds the conversation history, streams
-    the assistant's reply through the LLM gateway (which owns key failover,
-    transient-error retry, rate limiting and usage -- see llm/gateway.py), and
-    persists the full reply once the stream completes."""
+    """Builds the conversation history, streams the assistant's reply through
+    the LLM gateway (which owns key failover, transient-error retry, rate
+    limiting and usage -- see llm/gateway.py), and persists both messages once
+    the reply has completed."""
     await _require_owned_conversation(user_id, conversation_id)
 
-    history_rows = await list_messages(user_id, conversation_id)
+    # Only the window the model will see is fetched, not the whole history.
+    history_rows = await chat_repo.list_messages(conversation_id, _MAX_HISTORY_MESSAGES)
 
-    messages = [_row_to_message(row) for row in history_rows[-_MAX_HISTORY_MESSAGES:]]
+    messages = [_row_to_message(row) for row in history_rows]
     messages.append(Message(role=MessageRole.USER, content=user_content))
     messages = ensure_user_first(fit_to_budget(messages, _HISTORY_TOKEN_BUDGET, keep_leading=0))
 
