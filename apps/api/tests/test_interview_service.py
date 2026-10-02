@@ -20,14 +20,16 @@ def _gemini_key_row():
 
 @pytest.fixture(autouse=True)
 def _common_mocks(monkeypatch):
-    monkeypatch.setattr(service, "decrypt_key", lambda encrypted: encrypted)
     monkeypatch.setattr(
         service, "_get_owned_processed_resume", lambda user_id, resume_id: _async_value(_resume_row())
     )
     monkeypatch.setattr(
         service, "get_key_row", lambda user_id, provider, slot: _async_value(_gemini_key_row())
     )
-    monkeypatch.setattr(service, "embed_text", lambda api_key, text: _async_value([0.1, 0.2]))
+    async def fake_embed(user_id, texts):
+        return [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setattr(service.gateway, "embed", fake_embed)
     monkeypatch.setattr(
         service, "match_question_bank", lambda *a, **kw: _async_value([{"id": "q-1"}, {"id": "q-2"}])
     )
@@ -60,14 +62,14 @@ async def test_start_interview_creates_in_progress_interview_with_opening_messag
     async def fake_get_owned(user_id, interview_id):
         return {"id": interview_id, "status": "in_progress", **updated.get(interview_id, {})}
 
-    async def fake_complete_text(user_id, provider, messages):
+    async def fake_complete_text(user_id, provider, messages, options=None):
         return "Hi! Let's start with a quick intro -- tell me about yourself."
 
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
     monkeypatch.setattr(service, "_append_transcript", fake_append)
     monkeypatch.setattr(service, "_get_owned_interview", fake_get_owned)
-    monkeypatch.setattr(service, "complete_text", fake_complete_text)
+    monkeypatch.setattr(service.gateway, "complete", fake_complete_text)
 
     result = await service.start_interview(
         "user-1", "coding", "gemini", "resume-1", "We need a backend engineer."
@@ -97,7 +99,7 @@ async def test_start_interview_marks_aborted_on_failure(monkeypatch):
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
     monkeypatch.setattr(service, "_append_transcript", lambda *a: _async_value(None))
-    monkeypatch.setattr(service, "complete_text", fake_complete_text)
+    monkeypatch.setattr(service.gateway, "complete", fake_complete_text)
 
     with pytest.raises(RuntimeError):
         await service.start_interview("user-1", "coding", "gemini", "resume-1", "JD text")
@@ -133,10 +135,10 @@ async def test_submit_turn_advances_phase_and_returns_ai_reply(monkeypatch):
         {"speaker": "user", "text": "I'm a backend engineer."},
     ]))
 
-    async def fake_complete_text(user_id, provider, messages):
+    async def fake_complete_text(user_id, provider, messages, options=None):
         return "Great, let's dive into the first problem."
 
-    monkeypatch.setattr(service, "complete_text", fake_complete_text)
+    monkeypatch.setattr(service.gateway, "complete", fake_complete_text)
 
     result = await service.submit_turn("user-1", "interview-1", "I'm a backend engineer.")
 

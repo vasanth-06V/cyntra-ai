@@ -1,8 +1,11 @@
 import asyncio
 
-from app.ats.llm_utils import complete_text
 from app.core.db import get_supabase
+from app.llm import gateway
+from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
+
+_OPTIONS = LLMOptions(task="summarize", max_output_tokens=250, temperature=0.2)
 
 SUMMARIZE_EVERY_N_TURNS = 6
 
@@ -64,8 +67,8 @@ async def maybe_update_summary(interview_id: str, user_id: str, provider: str) -
     previous_summary = (interview_result.data or {}).get("running_summary") or "none"
 
     prompt = _SUMMARY_PROMPT.format(previous_summary=previous_summary, turns_text=turns_text)
-    summary = await complete_text(
-        user_id, provider, [Message(role=MessageRole.USER, content=prompt)]
+    summary = await gateway.complete(
+        user_id, provider, [Message(role=MessageRole.USER, content=prompt)], _OPTIONS
     )
 
     def _store():

@@ -26,10 +26,13 @@ def test_extract_json_raises_when_no_json_present():
 
 @pytest.mark.asyncio
 async def test_extract_requirements_fills_in_defaults_for_missing_fields(monkeypatch):
-    async def fake_complete_text(user_id, provider, messages):
+    seen = {}
+
+    async def fake_complete(user_id, provider, messages, options=None):
+        seen["options"] = options
         return '{"must_have": ["Python"]}'
 
-    monkeypatch.setattr(requirements_extractor, "complete_text", fake_complete_text)
+    monkeypatch.setattr(requirements_extractor.gateway, "complete", fake_complete)
 
     result = await extract_requirements("user-1", "gemini", "some JD text")
 
@@ -39,3 +42,10 @@ async def test_extract_requirements_fills_in_defaults_for_missing_fields(monkeyp
         "experience_level": "unspecified",
         "title": "",
     }
+
+    # Structured + deterministic + bounded.
+    options = seen["options"]
+    assert options.task == "extract"
+    assert options.json_mode is True
+    assert options.temperature == 0.0
+    assert options.max_output_tokens is not None

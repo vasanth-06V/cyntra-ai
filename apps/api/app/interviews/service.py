@@ -3,18 +3,20 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 
-from app.ats.llm_utils import complete_text
 from app.core.db import get_supabase
-from app.core.security import decrypt_key
 from app.interviews import summarizer
 from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase_for_elapsed
 from app.interviews.types import get_config
 from app.keys.service import get_key_row
+from app.llm import gateway
+from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
-from app.rag.embeddings import embed_text
 from app.rag.retrieval import match_question_bank, match_resume_chunks
 
 MAX_RAW_TURNS_IN_CONTEXT = 8
+
+_OPENING_OPTIONS = LLMOptions(task="interview", max_output_tokens=250)
+_TURN_OPTIONS = LLMOptions(task="interview", max_output_tokens=200)
 
 
 async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
@@ -169,8 +171,7 @@ async def start_interview(
     interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
 
     try:
-        gemini_api_key = decrypt_key(gemini_key["encrypted_key"])
-        jd_embedding = await embed_text(gemini_api_key, jd_text)
+        jd_embedding = (await gateway.embed(user_id, [jd_text]))[0]
 
         selected_question_ids: list[str] = []
         if config.question_count > 0:
@@ -194,8 +195,11 @@ async def start_interview(
             "opening phase. Respond with only what you would say out loud -- no "
             "labels, no stage directions."
         )
-        opening_message = await complete_text(
-            user_id, provider, [Message(role=MessageRole.USER, content=opening_prompt)]
+        opening_message = await gateway.complete(
+            user_id,
+            provider,
+            [Message(role=MessageRole.USER, content=opening_prompt)],
+            _OPENING_OPTIONS,
         )
 
         now = datetime.now(UTC)
@@ -257,7 +261,7 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         role = MessageRole.ASSISTANT if turn["speaker"] == "ai" else MessageRole.USER
         messages.append(Message(role=role, content=turn["text"]))
 
-    ai_reply = await complete_text(user_id, interview["provider"], messages)
+    ai_reply = await gateway.complete(user_id, interview["provider"], messages, _TURN_OPTIONS)
     ai_reply = ai_reply.strip()
 
     await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)

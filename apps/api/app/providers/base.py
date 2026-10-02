@@ -20,7 +20,7 @@ class Message:
 
 class ProviderRateLimitError(Exception):
     """Raised by an adapter when the provider reports a rate-limit or quota
-    error. keys.service.call_with_failover catches this specifically to
+    error. llm.gateway catches this specifically to
     trigger the primary -> backup key failover."""
 
 

@@ -2,45 +2,6 @@ import pytest
 from fastapi import HTTPException
 
 from app.chat import service
-from app.providers.base import ProviderRateLimitError, ProviderUnavailableError
-
-
-class FakeAdapter:
-    """Yields canned chunks for the primary key, raises
-    ProviderRateLimitError for a configured number of calls before
-    succeeding (or never, if always_fails=True)."""
-
-    def __init__(self, fail_before_backup: bool = False, always_fails: bool = False):
-        self.fail_before_backup = fail_before_backup
-        self.always_fails = always_fails
-        self.calls: list[str] = []
-
-    async def chat(self, api_key, messages, stream=True):
-        self.calls.append(api_key)
-        if api_key == "primary-key" and (self.fail_before_backup or self.always_fails):
-            raise ProviderRateLimitError("rate limited")
-        if api_key == "backup-key" and self.always_fails:
-            raise ProviderRateLimitError("rate limited")
-        for chunk in ["Hello", ", ", "world!"]:
-            yield chunk
-
-
-@pytest.fixture(autouse=True)
-def _common_mocks(monkeypatch):
-    monkeypatch.setattr(service, "decrypt_key", lambda encrypted: encrypted)
-    monkeypatch.setattr(
-        service, "_require_owned_conversation", lambda *a, **kw: _async_none()
-    )
-    monkeypatch.setattr(service, "list_messages", lambda *a, **kw: _async_value([]))
-
-    appended = []
-
-    async def fake_append(conversation_id, role, content, provider=None):
-        appended.append({"role": role, "content": content, "provider": provider})
-        return {}
-
-    monkeypatch.setattr(service, "_append_message", fake_append)
-    return appended
 
 
 async def _async_none():
@@ -51,8 +12,42 @@ async def _async_value(value):
     return value
 
 
-def _key_row(label: str) -> dict:
-    return {"id": label, "encrypted_key": label}
+@pytest.fixture
+def stored(monkeypatch):
+    """Patches the DB-facing helpers; returns the messages appended."""
+    appended: list[dict] = []
+
+    async def fake_append(conversation_id, role, content, provider=None):
+        appended.append({"role": role, "content": content, "provider": provider})
+        return {}
+
+    monkeypatch.setattr(service, "_require_owned_conversation", lambda *a, **kw: _async_none())
+    monkeypatch.setattr(service, "_append_message", fake_append)
+    monkeypatch.setattr(
+        service,
+        "list_messages",
+        lambda *a, **kw: _async_value(
+            [
+                {"role": "user", "content": "earlier question"},
+                {"role": "assistant", "content": "earlier answer"},
+            ]
+        ),
+    )
+    return appended
+
+
+def _patch_gateway(monkeypatch, chunks=("Hello", ", ", "world!"), error: Exception | None = None):
+    seen = {}
+
+    async def fake_stream(user_id, provider, messages, options=None):
+        seen.update(user_id=user_id, provider=provider, messages=messages, options=options)
+        if error:
+            raise error
+        for c in chunks:
+            yield c
+
+    monkeypatch.setattr(service.gateway, "stream", fake_stream)
+    return seen
 
 
 async def _collect(agen):
@@ -60,150 +55,37 @@ async def _collect(agen):
 
 
 @pytest.mark.asyncio
-async def test_streams_full_reply_on_primary_key(monkeypatch, _common_mocks):
-    adapter = FakeAdapter()
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
-
-    async def fake_get_key_row(user_id, provider, slot):
-        return _key_row("primary-key") if slot == "primary" else None
-
-    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
+async def test_streams_the_reply_and_persists_both_messages(monkeypatch, stored):
+    _patch_gateway(monkeypatch)
 
     chunks = await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
 
     assert "".join(chunks) == "Hello, world!"
-    assert adapter.calls == ["primary-key"]
-    assert _common_mocks[-1] == {
-        "role": "assistant",
-        "content": "Hello, world!",
-        "provider": "gemini",
-    }
+    assert stored[0] == {"role": "user", "content": "hi", "provider": None}
+    assert stored[-1] == {"role": "assistant", "content": "Hello, world!", "provider": "gemini"}
 
 
 @pytest.mark.asyncio
-async def test_fails_over_to_backup_before_any_chunk_sent(monkeypatch, _common_mocks):
-    adapter = FakeAdapter(fail_before_backup=True)
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
+async def test_sends_prior_history_then_the_new_message_to_the_gateway(monkeypatch, stored):
+    seen = _patch_gateway(monkeypatch)
 
-    async def fake_get_key_row(user_id, provider, slot):
-        return _key_row(f"{slot}-key")
+    await _collect(service.stream_reply("user-1", "conv-1", "gemini", "new question"))
 
-    notified = {}
-
-    async def fake_notify(user_id, message):
-        notified["message"] = message
-
-    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
-    monkeypatch.setattr(service, "notify_user", fake_notify)
-
-    chunks = await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
-
-    assert "".join(chunks) == "Hello, world!"
-    assert adapter.calls == ["primary-key", "backup-key"]
-    assert "switched to your backup key" in notified["message"]
+    contents = [m.content for m in seen["messages"]]
+    assert contents == ["earlier question", "earlier answer", "new question"]
+    assert seen["provider"] == "gemini"
+    assert seen["options"].task == "chat"
 
 
 @pytest.mark.asyncio
-async def test_raises_412_when_no_key_configured_at_all(monkeypatch, _common_mocks):
-    adapter = FakeAdapter()
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
+async def test_gateway_errors_propagate_and_no_assistant_message_is_saved(monkeypatch, stored):
+    _patch_gateway(monkeypatch, error=HTTPException(status_code=503, detail="overloaded"))
 
-    async def fake_get_key_row(user_id, provider, slot):
-        return None
-
-    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
-
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(HTTPException) as exc:
         await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
 
-    assert exc_info.value.status_code == 412
-
-
-@pytest.mark.asyncio
-async def test_raises_429_when_rate_limited_and_no_backup(monkeypatch, _common_mocks):
-    adapter = FakeAdapter(fail_before_backup=True)
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
-
-    async def fake_get_key_row(user_id, provider, slot):
-        return _key_row("primary-key") if slot == "primary" else None
-
-    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
-
-    with pytest.raises(HTTPException) as exc_info:
-        await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
-
-    assert exc_info.value.status_code == 429
-
-
-class FlakyAdapter:
-    """Raises ProviderUnavailableError for the first `fail_times` calls to
-    chat(), then streams normally. `fail_mid_stream` instead yields one chunk
-    and then fails."""
-
-    def __init__(self, fail_times: int = 0, fail_mid_stream: bool = False):
-        self.fail_times = fail_times
-        self.fail_mid_stream = fail_mid_stream
-        self.calls = 0
-
-    async def chat(self, api_key, messages, stream=True):
-        self.calls += 1
-        if self.fail_mid_stream:
-            yield "partial"
-            raise ProviderUnavailableError("dropped mid-stream")
-        if self.calls <= self.fail_times:
-            raise ProviderUnavailableError("high demand")
-        for chunk in ["Hello", ", ", "world!"]:
-            yield chunk
-
-
-def _only_primary_key(monkeypatch):
-    async def fake_get_key_row(user_id, provider, slot):
-        return _key_row("primary-key") if slot == "primary" else None
-
-    monkeypatch.setattr(service, "get_key_row", fake_get_key_row)
-
-
-@pytest.mark.asyncio
-async def test_retries_transient_provider_outage_then_succeeds(monkeypatch, _common_mocks):
-    adapter = FlakyAdapter(fail_times=2)
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
-    monkeypatch.setattr(service, "_RETRY_DELAYS", (0, 0))
-    _only_primary_key(monkeypatch)
-
-    chunks = await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
-
-    assert "".join(chunks) == "Hello, world!"
-    assert adapter.calls == 3
-    assert _common_mocks[-1]["content"] == "Hello, world!"
-
-
-@pytest.mark.asyncio
-async def test_raises_503_when_provider_stays_unavailable(monkeypatch, _common_mocks):
-    adapter = FlakyAdapter(fail_times=99)
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
-    monkeypatch.setattr(service, "_RETRY_DELAYS", (0, 0))
-    _only_primary_key(monkeypatch)
-
-    with pytest.raises(HTTPException) as exc_info:
-        await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
-
-    assert exc_info.value.status_code == 503
-    assert "try again" in exc_info.value.detail
-    assert adapter.calls == 3  # one attempt + two retries, then gave up
-
-
-@pytest.mark.asyncio
-async def test_does_not_retry_after_output_has_started(monkeypatch, _common_mocks):
-    adapter = FlakyAdapter(fail_mid_stream=True)
-    monkeypatch.setattr(service, "get_adapter", lambda provider: adapter)
-    monkeypatch.setattr(service, "_RETRY_DELAYS", (0, 0))
-    _only_primary_key(monkeypatch)
-
-    with pytest.raises(ProviderUnavailableError):
-        await _collect(service.stream_reply("user-1", "conv-1", "gemini", "hi"))
-
-    # Retrying would re-send text the user already saw.
-    assert adapter.calls == 1
+    assert exc.value.status_code == 503
+    assert [m["role"] for m in stored] == ["user"]  # the reply was never produced
 
 
 def test_router_returns_a_real_error_status_instead_of_a_broken_stream(monkeypatch):

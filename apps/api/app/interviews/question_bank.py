@@ -3,9 +3,7 @@ import asyncio
 from fastapi import HTTPException, status
 
 from app.core.db import get_supabase
-from app.core.security import decrypt_key
-from app.keys.service import get_key_row
-from app.rag.embeddings import embed_text
+from app.llm import gateway
 
 PERMISSION = "manage_question_bank"
 
@@ -52,13 +50,8 @@ async def _require_permission(user_id: str) -> None:
 
 
 async def _embed_question(user_id: str, question: str) -> list[float]:
-    gemini_key = await get_key_row(user_id, "gemini", "primary")
-    if not gemini_key:
-        raise HTTPException(
-            status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="A valid primary Gemini key is required to save a question",
-        )
-    return await embed_text(decrypt_key(gemini_key["encrypted_key"]), question)
+    # Raises 412 itself if the user has no Gemini key.
+    return (await gateway.embed(user_id, [question]))[0]
 
 
 async def create_question(

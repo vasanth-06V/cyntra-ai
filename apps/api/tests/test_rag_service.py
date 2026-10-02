@@ -6,7 +6,6 @@ from app.rag import service
 
 @pytest.fixture(autouse=True)
 def _common_mocks(monkeypatch):
-    monkeypatch.setattr(service, "decrypt_key", lambda encrypted: encrypted)
     monkeypatch.setattr(
         service,
         "_get_owned_resume",
@@ -71,12 +70,12 @@ class _FakeSupabase:
 async def test_process_resume_success_stores_chunks_and_embeddings(monkeypatch, _common_mocks):
     embed_requests = []
 
-    async def fake_embed_texts(api_key, chunks):
-        assert api_key == "gemini-key"
+    async def fake_embed(user_id, chunks):
+        assert user_id == "user-1"
         embed_requests.append(list(chunks))
         return [[0.1, 0.2]] * len(chunks)
 
-    monkeypatch.setattr(service, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(service.gateway, "embed", fake_embed)
     monkeypatch.setattr(service, "chunk_text", lambda text: ["chunk one", "chunk two"])
 
     count = await service.process_resume("user-1", "resume-1")

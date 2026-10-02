@@ -2,7 +2,6 @@ import pytest
 from fastapi import HTTPException
 
 from app.ats import service
-from app.keys.service import BothKeysFailedError
 
 
 async def _async_value(value):
@@ -18,7 +17,6 @@ embed_calls: list[list[str]] = []
 
 @pytest.fixture(autouse=True)
 def _common_mocks(monkeypatch):
-    monkeypatch.setattr(service, "decrypt_key", lambda encrypted: encrypted)
     monkeypatch.setattr(
         service,
         "_get_owned_resume",
@@ -31,11 +29,11 @@ def _common_mocks(monkeypatch):
     )
     embed_calls.clear()
 
-    async def fake_embed_texts(api_key, texts, usage=None):
+    async def fake_embed(user_id, texts):
         embed_calls.append(list(texts))
         return [[0.1, 0.2] for _ in texts]
 
-    monkeypatch.setattr(service, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(service.gateway, "embed", fake_embed)
     monkeypatch.setattr(
         service,
         "match_resume_chunks",
@@ -96,7 +94,7 @@ async def test_score_resume_raises_412_without_gemini_key(monkeypatch):
 @pytest.mark.asyncio
 async def test_score_resume_raises_429_when_extraction_exhausts_both_keys(monkeypatch):
     async def fake_extract_requirements(user_id, provider, jd_text):
-        raise BothKeysFailedError("both keys rate-limited")
+        raise HTTPException(status_code=429, detail="both keys rate-limited")
 
     monkeypatch.setattr(service, "extract_requirements", fake_extract_requirements)
 
@@ -112,7 +110,7 @@ async def test_score_resume_raises_429_when_feedback_generation_exhausts_both_ke
         return {"must_have": [], "nice_to_have": [], "experience_level": "mid", "title": "Eng"}
 
     async def fake_generate_feedback(*args, **kwargs):
-        raise BothKeysFailedError("both keys rate-limited")
+        raise HTTPException(status_code=429, detail="both keys rate-limited")
 
     monkeypatch.setattr(service, "extract_requirements", fake_extract_requirements)
     monkeypatch.setattr(service, "generate_feedback", fake_generate_feedback)

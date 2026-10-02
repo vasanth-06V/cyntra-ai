@@ -1,18 +1,10 @@
 import asyncio
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from typing import TypeVar
 
 from app.core.db import get_supabase
-from app.core.security import decrypt_key, encrypt_key
+from app.core.security import encrypt_key
 from app.providers.base import ProviderRateLimitError
 from app.providers.registry import get_adapter
-
-T = TypeVar("T")
-
-
-class BothKeysFailedError(Exception):
-    """Raised when neither the primary nor backup key works for a provider."""
 
 
 async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> dict:
@@ -95,9 +87,8 @@ async def delete_key(user_id: str, key_id: str) -> None:
 
 
 async def get_key_row(user_id: str, provider: str, slot: str) -> dict | None:
-    """Public, cross-module lookup -- used directly by streaming consumers
-    (chat/interview services) that need primary/backup key access but can't
-    use call_with_failover's one-shot-call shape. See its docstring."""
+    """Public lookup used by the LLM gateway (llm/gateway.py), which owns
+    primary -> backup failover."""
     supabase = get_supabase()
 
     def _query():
@@ -127,44 +118,3 @@ async def notify_user(user_id: str, message: str) -> None:
         )
 
     await asyncio.to_thread(_insert)
-
-
-async def call_with_failover(
-    user_id: str, provider: str, fn: Callable[[str], Awaitable[T]]
-) -> T:
-    """Runs a one-shot async call (e.g. validate(), embed(), a non-streaming
-    chat call) against the user's primary key for `provider`. On a rate-limit
-    error, retries once against the backup key and notifies the user after a
-    successful fallback. Raises BothKeysFailedError if neither works.
-
-    Streaming chat failover (switching keys mid-stream) is a different
-    problem -- partially-yielded output can't simply be "retried" -- and is
-    handled directly in the chat/interview services that consume streaming
-    responses, reusing get_key_row/notify_user from this module directly.
-    """
-    primary = await get_key_row(user_id, provider, "primary")
-    if not primary:
-        raise BothKeysFailedError(f"No {provider} key configured")
-
-    try:
-        return await fn(decrypt_key(primary["encrypted_key"]))
-    except ProviderRateLimitError:
-        backup = await get_key_row(user_id, provider, "backup")
-        if not backup:
-            raise BothKeysFailedError(
-                f"Primary {provider} key is rate-limited and no backup key is configured"
-            ) from None
-
-        try:
-            result = await fn(decrypt_key(backup["encrypted_key"]))
-        except ProviderRateLimitError as exc:
-            raise BothKeysFailedError(
-                f"Both primary and backup {provider} keys are rate-limited"
-            ) from exc
-
-        await notify_user(
-            user_id,
-            f"Your primary {provider} key hit its rate limit -- "
-            f"switched to your backup key.",
-        )
-        return result

@@ -1,5 +1,8 @@
-from app.ats.llm_utils import complete_text
+from app.llm import gateway
+from app.llm.options import LLMOptions
 from app.providers.base import Message, MessageRole
+
+_OPTIONS = LLMOptions(task="feedback", max_output_tokens=400, temperature=0.4)
 
 _PROMPT = """You are giving a candidate actionable feedback on how well their \
 resume matches a job description, for an ATS-style resume scoring tool.
@@ -37,5 +40,5 @@ async def generate_feedback(
         formatting_score=formatting_score,
     )
     messages = [Message(role=MessageRole.USER, content=prompt)]
-    text = await complete_text(user_id, provider, messages)
+    text = await gateway.complete(user_id, provider, messages, _OPTIONS)
     return text.strip()

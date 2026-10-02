@@ -59,11 +59,10 @@ def stored():
 
 @pytest.fixture(autouse=True)
 def _patch_embed(monkeypatch):
-    async def fake_embed_text(api_key, text):
-        return [0.1, 0.2]
+    async def fake_embed(user_id, texts):
+        return [[0.1, 0.2] for _ in texts]
 
-    monkeypatch.setattr(question_bank, "embed_text", fake_embed_text)
-    monkeypatch.setattr(question_bank, "decrypt_key", lambda encrypted: encrypted)
+    monkeypatch.setattr(question_bank.gateway, "embed", fake_embed)
 
 
 @pytest.mark.asyncio
@@ -79,7 +78,11 @@ async def test_create_question_denied_for_plain_user(monkeypatch, stored):
 @pytest.mark.asyncio
 async def test_create_question_requires_gemini_key(monkeypatch, stored):
     monkeypatch.setattr(question_bank, "_is_owner_or_has_permission", lambda *a: _async_value(True))
-    monkeypatch.setattr(question_bank, "get_key_row", lambda *a, **kw: _async_value(None))
+
+    async def no_key(user_id, texts):
+        raise HTTPException(status_code=412, detail="No gemini key configured")
+
+    monkeypatch.setattr(question_bank.gateway, "embed", no_key)
 
     with pytest.raises(HTTPException) as exc_info:
         await question_bank.create_question("owner-1", "coding", "Reverse a linked list", None, None)
@@ -90,11 +93,6 @@ async def test_create_question_requires_gemini_key(monkeypatch, stored):
 @pytest.mark.asyncio
 async def test_create_question_succeeds_for_owner_and_embeds(monkeypatch, stored):
     monkeypatch.setattr(question_bank, "_is_owner_or_has_permission", lambda *a: _async_value(True))
-    monkeypatch.setattr(
-        question_bank,
-        "get_key_row",
-        lambda *a, **kw: _async_value({"id": "key-1", "encrypted_key": "gemini-key"}),
-    )
     monkeypatch.setattr(question_bank, "get_supabase", lambda: _FakeSupabase(stored))
 
     result = await question_bank.create_question(

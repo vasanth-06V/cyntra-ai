@@ -6,9 +6,8 @@ from app.ats.feedback import generate_feedback
 from app.ats.requirements_extractor import extract_requirements
 from app.ats.scorer import composite_score, formatting_score, keyword_score, missing_terms
 from app.core.db import get_supabase
-from app.core.security import decrypt_key
-from app.keys.service import BothKeysFailedError, get_key_row
-from app.rag.embeddings import embed_texts
+from app.keys.service import get_key_row
+from app.llm import gateway
 from app.rag.retrieval import match_resume_chunks
 
 
@@ -36,7 +35,7 @@ async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
     return result.data
 
 
-async def _semantic_score(resume_id: str, requirements: dict, gemini_api_key: str) -> float:
+async def _semantic_score(user_id: str, resume_id: str, requirements: dict) -> float:
     terms = requirements["must_have"] + requirements["nice_to_have"]
     if not terms:
         return 1.0
@@ -44,7 +43,7 @@ async def _semantic_score(resume_id: str, requirements: dict, gemini_api_key: st
     # One embedding request for every keyword (was one per keyword, ~20 per
     # run). The per-keyword resume lookups are plain DB queries -- no model
     # quota -- so they run concurrently.
-    embeddings = await embed_texts(gemini_api_key, terms)
+    embeddings = await gateway.embed(user_id, terms)
     matches = await asyncio.gather(
         *(match_resume_chunks(resume_id, e, match_count=1) for e in embeddings)
     )
@@ -55,6 +54,8 @@ async def _semantic_score(resume_id: str, requirements: dict, gemini_api_key: st
 async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str) -> dict:
     resume = await _get_owned_resume(user_id, resume_id)
 
+    # Fail fast: without a Gemini key the embedding step would fail *after*
+    # the extraction call had already spent a request.
     gemini_key = await get_key_row(user_id, "gemini", "primary")
     if not gemini_key:
         raise HTTPException(
@@ -62,36 +63,24 @@ async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str
             detail="A valid primary Gemini key is required to score a resume",
         )
 
-    try:
-        requirements = await extract_requirements(user_id, provider, jd_text)
-    except BothKeysFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
-        ) from exc
+    requirements = await extract_requirements(user_id, provider, jd_text)
 
     kw_score = keyword_score(requirements, resume["parsed_text"])
-    sem_score = await _semantic_score(
-        resume_id, requirements, decrypt_key(gemini_key["encrypted_key"])
-    )
+    sem_score = await _semantic_score(user_id, resume_id, requirements)
     fmt_score = formatting_score(resume["parsed_text"])
     composite = composite_score(kw_score, sem_score, fmt_score)
     missing_must, missing_nice = missing_terms(requirements, resume["parsed_text"])
 
-    try:
-        feedback = await generate_feedback(
-            user_id,
-            provider,
-            requirements["title"],
-            missing_must,
-            missing_nice,
-            kw_score,
-            sem_score,
-            fmt_score,
-        )
-    except BothKeysFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)
-        ) from exc
+    feedback = await generate_feedback(
+        user_id,
+        provider,
+        requirements["title"],
+        missing_must,
+        missing_nice,
+        kw_score,
+        sem_score,
+        fmt_score,
+    )
 
     return {
         "composite_score": composite,
