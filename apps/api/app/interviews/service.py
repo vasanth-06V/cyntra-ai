@@ -80,7 +80,7 @@ _PROMPT_BUDGET_TOKENS = 1200
 _get_owned_interview = interviews_repo.get_owned_interview
 _update_interview = interviews_repo.update_interview
 _append_transcript = interviews_repo.append_transcript
-_next_turn_index = interviews_repo.next_turn_index
+_append_turns = interviews_repo.append_turns
 _recent_turns = interviews_repo.recent_turns
 _get_question_text = interviews_repo.question_text
 _create_interview_row = interviews_repo.create_interview
@@ -237,7 +237,29 @@ async def start_interview(
     return await _get_owned_interview(user_id, interview_id)
 
 
+# One answer at a time per interview (per process, like the limiter and the
+# background tasks). A double-click or a retry while the first request is still
+# being answered gets a clear 409 instead of paying for a second LLM call and
+# racing the first one for the next turn slot. The database write is atomic
+# on its own (append_interview_turns); this just avoids the wasted call.
+_turns_in_flight: set[str] = set()
+
+
 async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
+    if interview_id in _turns_in_flight:
+        raise AppError(
+            status.HTTP_409_CONFLICT,
+            "turn_in_progress",
+            "Your previous answer is still being processed -- one moment.",
+        )
+    _turns_in_flight.add(interview_id)
+    try:
+        return await _submit_turn(user_id, interview_id, content)
+    finally:
+        _turns_in_flight.discard(interview_id)
+
+
+async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     interview = await _get_owned_interview(user_id, interview_id)
     if interview["status"] != "in_progress":
         raise AppError(status.HTTP_409_CONFLICT, "interview_not_active", f"Interview is not in progress (status: {interview['status']})")
@@ -315,9 +337,7 @@ async def submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         logger.warning("Interviewer reply filtered: it repeated the interview rules")
         ai_reply = SAFE_REDIRECT
 
-    turn_index = await _next_turn_index(interview_id)
-    await _append_transcript(interview_id, turn_index, "user", content)
-    await _append_transcript(interview_id, turn_index + 1, "ai", ai_reply)
+    await _append_turns(interview_id, user_id, content, ai_reply)
     # Folding old turns into the running summary is housekeeping: it runs in
     # the background so it adds no latency to this turn, and a failure (quota,
     # outage) just means it is retried after a later turn.

@@ -91,6 +91,28 @@ async def append_transcript(interview_id: str, turn_index: int, speaker: str, te
     await run(_q)
 
 
+async def append_turns(interview_id: str, user_id: str, user_text: str, ai_text: str) -> int:
+    """The candidate's answer and the interviewer's reply, written together in
+    ONE transaction (rpc append_interview_turns) under a row lock on the
+    interview, so turn indexes can never collide and a reply is never stored
+    without its answer. Returns the answer's turn_index."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.rpc(
+            "append_interview_turns",
+            {
+                "p_interview_id": interview_id,
+                "p_user_id": user_id,
+                "p_user_text": user_text,
+                "p_ai_text": ai_text,
+            },
+        ).execute()
+
+    result = await run(_q)
+    return int(result.data)
+
+
 async def next_turn_index(interview_id: str) -> int:
     supabase = get_supabase()
 

@@ -83,8 +83,7 @@ async def test_a_turn_returns_without_waiting_for_the_summary(monkeypatch):
 
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: value(interview))
     monkeypatch.setattr(service, "_update_interview", lambda *a: value(None))
-    monkeypatch.setattr(service, "_next_turn_index", lambda *a: value(2))
-    monkeypatch.setattr(service, "_append_transcript", lambda *a: value(None))
+    monkeypatch.setattr(service, "_append_turns", lambda *a: value(2))
     monkeypatch.setattr(service, "_recent_turns", lambda *a: value([{"speaker": "ai", "text": "Hi"}]))
     monkeypatch.setattr(service.summarizer, "maybe_update_summary", slow_summary)
     monkeypatch.setattr(service.gateway, "complete", fake_complete)

@@ -49,8 +49,7 @@ def _wire(monkeypatch, interview, summarizer_fn=None, question_fn=None):
 
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _value(interview))
     monkeypatch.setattr(service, "_update_interview", lambda *a: _value(None))
-    monkeypatch.setattr(service, "_next_turn_index", lambda *a: _value(2))
-    monkeypatch.setattr(service, "_append_transcript", lambda *a: _value(None))
+    monkeypatch.setattr(service, "_append_turns", lambda *a: _value(2))
     monkeypatch.setattr(
         service, "_recent_turns",
         lambda *a: _value([{"speaker": "ai", "text": "Hi"}, {"speaker": "user", "text": "Hello"}]),

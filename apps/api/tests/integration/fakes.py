@@ -296,6 +296,21 @@ class FakeSupabase:
             resume.update(parsed_text=params["p_text"], content_hash=params["p_content_hash"],
                           embed_version=params["p_embed_version"])
             return len(params["p_chunks"])
+        if name == "append_interview_turns":
+            interview = next(
+                (r for r in self.tables.get("interviews", [])
+                 if r["id"] == params["p_interview_id"] and r["user_id"] == params["p_user_id"]),
+                None,
+            )
+            if interview is None:
+                raise APIError({"message": "interview not found", "code": "P0002", "details": None, "hint": None})
+            existing = [r["turn_index"] for r in self.tables.get("interview_transcripts", [])
+                        if r["interview_id"] == params["p_interview_id"]]
+            nxt = (max(existing) + 1) if existing else 0
+            for offset, (speaker, text) in enumerate((("user", params["p_user_text"]), ("ai", params["p_ai_text"]))):
+                self.seed("interview_transcripts", interview_id=params["p_interview_id"],
+                          turn_index=nxt + offset, speaker=speaker, text=text)
+            return nxt
         if name == "match_resume_chunks_multi":
             chunks = sorted(
                 (r for r in self.tables.get("resume_chunks", []) if r["resume_id"] == params["filter_resume_id"]),

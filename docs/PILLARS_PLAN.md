@@ -86,7 +86,7 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 ### M4 — Jobs, atomicity, upload (M–L)
 - `jobs` table (queued/running/succeeded/failed, progress text, heartbeat, partial-unique index for idempotency), asyncio runner with a 2-job semaphore, startup recovery, `GET /v1/jobs/{id}` (owner-scoped).
 - Atomic RPCs: `append_interview_turns` (row lock, both turns in one insert), `append_chat_exchange`, plus a per-interview in-process lock and optional `Idempotency-Key` (double-click no longer double-spends LLM calls).
-- Presigned direct R2 upload + `POST /v1/resumes` (D8); interview setup becomes a real `setting_up` job with progress messages (the plan's "polled setup screen"); frontend polling UI.
+- ~~Presigned direct R2 upload~~ **dropped 2026-10-03**: resumes are capped at 500 KB, far under Vercel's 4.5 MB body limit, so the server-side upload stays (storage is now Supabase Storage). Interview setup becomes a real `setting_up` job with progress messages (the plan's "polled setup screen"); frontend polling UI.
 - Async supabase client in lifespan, drop `to_thread` wrappers (after the repo layer makes it a one-file change).
 
 ### Phase 7 — Coding platform *(needs the §6 execution-backend decision; starts after M0–M4; M2 items 1–6 and M3 items 6–7 are hard prerequisites)*
@@ -112,8 +112,9 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 |---|---|---|
 | `0019` (exists) | audit hardening | M0 |
 | `0020_rag_v2` | `embed_model/section/difficulty/topic/content_hash`, tsvector+GIN, multi/v2/replace RPCs, **question_bank lockdown** | M3 |
-| `0021_jobs` | `jobs` table + policies | M4 |
-| `0022_atomic_rpcs` | `append_interview_turns`, `append_chat_exchange`, `chat_messages.status` | M2/M4 |
+| `0021_atomic_turns` | `append_interview_turns` (row lock, both turns in one insert), `admin_permissions` unique grant | M4.1 |
+| `0022_jobs` | `jobs` table + policies | M4.2 |
+| later (deferred by owner 2026-10-03) | resume rename (`resumes.name`), 3-resume limit trigger, `ats_history` (last 10) | backlog |
 | `0023_llm_observability` | `llm_usage.feature/model/thought_tokens`, Pacific-day column for Gemini, prompt-version columns | M2 |
 | `0024_coding` | `code_submissions`, `test_results` | Phase 7 |
 | `0025_reports` | tighten `interview_reports`, `expires_at` default/index, `pg_cron` sweep | Phase 9 |

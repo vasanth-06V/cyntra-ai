@@ -21,7 +21,7 @@ async def has_permission(user_id: str, permission: str) -> bool:
             .select("id")
             .eq("admin_id", user_id)
             .eq("permission_key", permission)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
 

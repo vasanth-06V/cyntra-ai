@@ -128,10 +128,13 @@ async def test_submit_turn_advances_phase_and_returns_ai_reply(monkeypatch):
 
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _async_value(interview))
     monkeypatch.setattr(service, "_update_interview", lambda iid, fields: _record_update(updated, iid, fields))
-    monkeypatch.setattr(service, "_next_turn_index", lambda iid: _async_value(2))
-    monkeypatch.setattr(
-        service, "_append_transcript", lambda iid, idx, speaker, text: _record_append(appended, iid, idx, speaker, text)
-    )
+
+    async def fake_append_turns(iid, uid, user_text, ai_text):
+        appended.append((iid, 2, "user", user_text))
+        appended.append((iid, 3, "ai", ai_text))
+        return 2
+
+    monkeypatch.setattr(service, "_append_turns", fake_append_turns)
     monkeypatch.setattr(service, "_recent_turns", lambda iid, limit: _async_value([
         {"speaker": "ai", "text": "Tell me about yourself."},
         {"speaker": "user", "text": "I'm a backend engineer."},

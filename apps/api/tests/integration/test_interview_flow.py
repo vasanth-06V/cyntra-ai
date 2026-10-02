@@ -382,17 +382,31 @@ async def test_turn_after_the_hour_is_over_is_refused(client, keyed):
     assert t.status_code in (409, 410)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG (race): next turn_index is read then inserted non-atomically; two concurrent turns (double-click) collide on the same turn_index (silent duplicates without migration 0019; with its unique index one request becomes a 500)")
-async def test_concurrent_turns_get_distinct_turn_indexes(client, keyed):
+async def test_a_double_click_gets_one_answer_and_a_clear_409(client, keyed):
+    """The second concurrent answer is refused (no second LLM call, no turn-slot race)."""
     r, _ = await _start(client, keyed, type_="hr")
     iid = r.json()["id"]
-    keyed.db.select_delay["interview_transcripts"] = 0.05
-    await asyncio.gather(*[
+    keyed.db.select_delay["interviews"] = 0.05
+    results = await asyncio.gather(*[
         client.post(f"/interviews/{iid}/turns", json={"content": f"dbl {i}"}, headers=as_user(USER_A))
         for i in range(2)
     ])
+    codes = sorted(x.status_code for x in results)
+    assert codes == [200, 409], codes
+    assert [x for x in results if x.status_code == 409][0].json()["error"]["code"] == "turn_in_progress"
     idx = [t["turn_index"] for t in keyed.db.rows("interview_transcripts", interview_id=iid)]
     assert len(idx) == len(set(idx)), idx
+
+
+async def test_the_answer_and_the_reply_are_stored_together_with_consecutive_indexes(client, keyed):
+    r, _ = await _start(client, keyed, type_="hr")
+    iid = r.json()["id"]
+    await client.post(f"/interviews/{iid}/turns", json={"content": "first"}, headers=as_user(USER_A))
+    await client.post(f"/interviews/{iid}/turns", json={"content": "second"}, headers=as_user(USER_A))
+    rows = sorted(keyed.db.rows("interview_transcripts", interview_id=iid), key=lambda t: t["turn_index"])
+    assert [t["turn_index"] for t in rows] == [0, 1, 2, 3, 4]
+    assert [t["speaker"] for t in rows] == ["ai", "user", "ai", "user", "ai"]
+    assert [n for n, _ in keyed.db.rpc_calls].count("append_interview_turns") == 2
 
 
 async def test_failed_turn_leaves_no_dangling_user_answer(client, keyed):
@@ -448,7 +462,6 @@ async def test_bad_filter_and_bad_ids_are_clean_4xx(client, staffed):
     assert r1.status_code < 500 and r2.status_code < 500
 
 
-@pytest.mark.xfail(strict=True, reason="BUG: admin_permissions has no unique(admin_id, permission_key); a duplicated grant makes maybe_single() fail (PGRST116) -> the admin gets HTTP 500 on every question-bank write")
 async def test_duplicate_permission_grant_does_not_break_the_admin(client, staffed):
     staffed.db.seed("admin_permissions", admin_id=ADMIN_OK, permission_key="manage_question_bank")
     r = await client.post("/interviews/question-bank", json=QUESTION, headers=as_user(ADMIN_OK))
