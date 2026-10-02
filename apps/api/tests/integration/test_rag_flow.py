@@ -1,4 +1,4 @@
-"""POST /rag/resumes/{id}/process end to end (R2 download mocked)."""
+"""POST /rag/resumes/{id}/process end to end (storage download mocked)."""
 
 import io
 
@@ -137,7 +137,7 @@ async def test_corrupt_file_is_clean_4xx(client, env, r2):
     assert r.status_code < 500
 
 
-async def test_missing_r2_object_is_not_a_500(client, env, r2):
+async def test_missing_stored_object_is_not_a_500(client, env, r2):
     seed_key(env, USER_A, "gemini", "primary", "gem")
     resume = _resume(env, key="resumes/u/never-uploaded.pdf")
     r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
@@ -172,3 +172,18 @@ async def test_a_file_over_500kb_is_rejected_before_parsing_or_embedding(client,
     assert r.status_code == 422
     assert "500KB" in r.json()["error"]["message"]
     assert env.gemini.embed_calls == []
+
+
+async def test_a_bare_404_from_storage_is_reported_as_file_not_found(client, env, monkeypatch):
+    from botocore.exceptions import ClientError
+
+    from app.rag import service as rag_service
+
+    def gone(key):
+        raise ClientError({"Error": {"Code": "", "Message": ""}, "ResponseMetadata": {"HTTPStatusCode": 404}}, "GetObject")
+
+    monkeypatch.setattr(rag_service, "download_bytes", gone)
+    seed_key(env, USER_A, "gemini", "primary", "gem")
+    resume = _resume(env)
+    r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
+    assert r.status_code == 404

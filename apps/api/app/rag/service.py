@@ -74,7 +74,7 @@ async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
 
 
 async def process_resume(user_id: str, resume_id: str) -> int:
-    """Downloads the resume from R2, extracts text, chunks it into labelled
+    """Downloads the resume from object storage, extracts text, chunks it into labelled
     sections, embeds the chunks (always via Gemini -- see rag/embeddings.py)
     and stores them atomically. Returns the number of chunks. Re-processing an
     unchanged resume costs no embedding quota."""
@@ -87,7 +87,10 @@ async def process_resume(user_id: str, resume_id: str) -> int:
     try:
         file_bytes = await asyncio.to_thread(download_bytes, resume["file_key"])
     except Exception as exc:
-        missing = "NoSuchKey" in repr(exc) or "404" in repr(exc)
+        # Providers differ: R2/S3 send code NoSuchKey, Supabase Storage sends a
+        # bare 404 with an empty code -- so look at the HTTP status too.
+        http_status = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
+        missing = http_status == 404 or "NoSuchKey" in repr(exc)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if missing else status.HTTP_502_BAD_GATEWAY,
             detail="The uploaded file could not be found -- please upload it again."

@@ -560,3 +560,9 @@ Offline eval, v1 -> v2 (fake embedder): section recall on the ALL-CAPS resume 0.
 **Why**: Owner's resume is ~210 KB; resumes are small text documents, and a tight limit bounds parse/embedding cost and abuse.
 **Result**: tests and `tsc` pass. The Vercel 4.5 MB body cap is no longer the binding limit.
 **Problems**: none.
+
+### [2026-10-03] Supabase Storage verified live; missing-file detection fixed
+
+**Action**: Owner supplied the five `STORAGE_*` values (written to the two gitignored env files). Ran a live check through the app's own clients (Python boto3 and the web AWS SDK config), using throwaway objects under `resumes/_check/`, all deleted afterwards.
+**Result**: PDF and DOCX content types accepted; `text/plain` and `image/png` rejected (415); 600 KB rejected (413); 499 KB accepted; download through `download_bytes` returned identical bytes; cleanup left 0 objects. Both Python and Node clients work with path-style addressing.
+**Problems**: Supabase answers a missing object with a bare 404 and an empty error code, so the old `"NoSuchKey"/"404" in repr(exc)` check missed it and would have returned 502 instead of 404. Fixed to read the HTTP status; regression test added. 506 tests pass. Not yet exercised: the full upload-through-the-UI flow with the signed-in user (owner to try).
