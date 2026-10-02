@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.ids import UuidStr
 from app.core.security import AuthenticatedUser, get_current_user
+from app.core.throttle import limited
 from app.interviews import question_bank, service
 from app.interviews.models import (
     InterviewType,
@@ -64,7 +65,7 @@ async def delete_question(
 
 @router.post("", response_model=InterviewOut, status_code=status.HTTP_201_CREATED)
 async def start_interview(
-    body: StartInterviewRequest, user: AuthenticatedUser = Depends(get_current_user)
+    body: StartInterviewRequest, user: AuthenticatedUser = Depends(limited("interviews.start", 4))
 ):
     return await service.start_interview(
         user.user_id, body.type.value, body.provider.value, body.resume_id, body.jd_text

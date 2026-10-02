@@ -35,6 +35,7 @@ class RateLimiter:
         self._max_wait = max_wait
         self._windows: dict[tuple[str, str], deque[float]] = {}
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._acquires = 0
 
     async def acquire(self, user_id: str, bucket: str) -> None:
         """Waits for a free slot in this user's sliding one-minute window,
@@ -43,6 +44,10 @@ class RateLimiter:
         limit = self._limits.get(bucket)
         if not limit:
             return
+
+        self._acquires += 1
+        if self._acquires % 256 == 0:
+            self._evict_idle()
 
         key = (user_id, bucket)
         lock = self._locks.setdefault(key, asyncio.Lock())
@@ -62,6 +67,18 @@ class RateLimiter:
                     raise AppError(status.HTTP_429_TOO_MANY_REQUESTS, "rate_limited", "Too many requests in a short time -- please wait a moment.")
                 await self._sleep(wait)
                 waited += wait
+
+    def _evict_idle(self) -> None:
+        """Forget users who have been quiet for a full window (and aren't
+        mid-wait), so the per-user dicts can't grow without bound."""
+        now = self._clock()
+        for key in list(self._windows):
+            window = self._windows[key]
+            lock = self._locks.get(key)
+            quiet = not window or now - window[-1] >= _WINDOW_SECONDS
+            if quiet and not (lock and lock.locked()):
+                self._windows.pop(key, None)
+                self._locks.pop(key, None)
 
 
 limiter = RateLimiter()

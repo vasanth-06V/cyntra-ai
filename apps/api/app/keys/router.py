@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.core.ids import UuidStr
 from app.core.security import AuthenticatedUser, get_current_user
+from app.core.throttle import limited
 from app.keys import service
 from app.keys.models import ProviderKeyOut, SubmitKeyRequest
 
@@ -10,7 +11,7 @@ router = APIRouter(prefix="/keys", tags=["keys"])
 
 @router.post("", response_model=ProviderKeyOut, status_code=status.HTTP_201_CREATED)
 async def submit_key(
-    body: SubmitKeyRequest, user: AuthenticatedUser = Depends(get_current_user)
+    body: SubmitKeyRequest, user: AuthenticatedUser = Depends(limited("keys.submit", 10))
 ):
     row = await service.submit_key(
         user_id=user.user_id,
