@@ -14,7 +14,7 @@ from app.interviews.types import get_config
 from app.db.keys import get_key_row
 from app.llm import gateway
 from app.llm.budget import ensure_user_first, fit_to_budget, truncate
-from app.llm.json_utils import extract_json
+from app.llm.schemas import SetupOut
 from app.llm.options import LLMOptions
 from app.llm.prompts.interview import (
     SETUP_PROMPT,
@@ -136,22 +136,20 @@ async def start_interview(
             resume=resume_context,
             jd=truncate(jd_text, _JD_SETUP_TOKENS),
         )
-        raw = await gateway.complete(
-            user_id,
-            provider,
-            [Message(role=MessageRole.USER, content=setup_prompt)],
-            _SETUP_OPTIONS,
-        )
         try:
-            data = extract_json(raw)
-            opening_message = str(data["opening"]).strip()
-            brief = str(data.get("brief") or "").strip()
-            if not opening_message:
-                raise ValueError("empty opening")
-        except (ValueError, KeyError, TypeError):
-            # The model ignored the format: use its text as the greeting and
-            # build the brief without another call.
-            opening_message = _salvage_opening(raw)
+            setup = await gateway.complete_structured(
+                user_id,
+                provider,
+                [Message(role=MessageRole.USER, content=setup_prompt)],
+                SetupOut,
+                _SETUP_OPTIONS,
+            )
+            opening_message, brief = setup.opening, setup.brief
+        except gateway.StructuredOutputError as err:
+            # The model never produced usable JSON, even after a repair try:
+            # use whatever greeting can be salvaged and build the brief
+            # without another call.
+            opening_message = _salvage_opening(err.raw)
             brief = ""
         if not brief:
             brief = truncate(

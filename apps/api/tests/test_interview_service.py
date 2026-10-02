@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+
+from tests.helpers import completion
 from fastapi import HTTPException
 
 from app.interviews import service
@@ -63,13 +65,13 @@ async def test_start_interview_creates_in_progress_interview_with_opening_messag
         return {"id": interview_id, "status": "in_progress", **updated.get(interview_id, {})}
 
     async def fake_complete_text(user_id, provider, messages, options=None):
-        return "Hi! Let's start with a quick intro -- tell me about yourself."
+        return completion("Hi! Let's start with a quick intro -- tell me about yourself.")
 
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
     monkeypatch.setattr(service, "_append_transcript", fake_append)
     monkeypatch.setattr(service, "_get_owned_interview", fake_get_owned)
-    monkeypatch.setattr(service.gateway, "complete", fake_complete_text)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete_text)
 
     result = await service.start_interview(
         "user-1", "coding", "gemini", "resume-1", "We need a backend engineer."
@@ -99,7 +101,7 @@ async def test_start_interview_marks_aborted_on_failure(monkeypatch):
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
     monkeypatch.setattr(service, "_append_transcript", lambda *a: _async_value(None))
-    monkeypatch.setattr(service.gateway, "complete", fake_complete_text)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete_text)
 
     with pytest.raises(RuntimeError):
         await service.start_interview("user-1", "coding", "gemini", "resume-1", "JD text")

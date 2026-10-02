@@ -81,3 +81,41 @@ def test_gemini_never_uses_a_retired_or_slow_model():
     for task, model in MODELS["gemini"].items():
         assert "1.5" not in model, f"{task} uses a retired model"
         assert model == "gemini-flash-lite-latest", f"{task}: lite is the measured low-latency choice"
+
+
+# --- structured output -------------------------------------------------------
+
+
+def test_extract_json_ignores_trailing_prose_even_with_braces():
+    from app.llm.json_utils import extract_json
+
+    assert extract_json('{"a": 1} Hope that helps {not json}') == {"a": 1}
+    assert extract_json('Here you go:\n```json\n{"a": {"b": [1, 2]}}\n```\nBye {x}') == {"a": {"b": [1, 2]}}
+
+
+def test_extract_json_rejects_non_objects():
+    import pytest
+
+    from app.llm.json_utils import extract_json
+
+    with pytest.raises(ValueError):
+        extract_json("[1, 2, 3]")
+    with pytest.raises(ValueError):
+        extract_json("no json here")
+
+
+def test_schemas_coerce_sloppy_model_output():
+    from app.llm.schemas import RequirementsOut, SetupOut
+
+    messy = RequirementsOut.model_validate(
+        {"must_have": "Python", "nice_to_have": [{"x": 1}, "", "Go", 7], "experience_level": None, "title": None}
+    )
+    assert messy.must_have == ["Python"] and messy.nice_to_have == ["Go", "7"]
+    assert messy.experience_level == "unspecified" and messy.title == ""
+    assert len(RequirementsOut.model_validate({"must_have": [f"s{i}" for i in range(40)]}).must_have) == 15
+
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        SetupOut.model_validate({"brief": "x", "opening": "   "})

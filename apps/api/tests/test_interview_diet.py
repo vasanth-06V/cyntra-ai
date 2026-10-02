@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from tests.helpers import completion
+
 from app.db import interviews as interviews_repo
 from app.interviews import service, summarizer
 from app.llm.budget import estimate_messages_tokens
@@ -61,9 +63,9 @@ def start_mocks(monkeypatch):
 async def test_setup_is_one_embed_and_one_llm_call_and_stores_brief(monkeypatch, start_mocks):
     async def fake_complete(user_id, provider, messages, options=None):
         start_mocks["complete"].append((messages, options))
-        return '{"brief": "Backend role, senior, Python.", "opening": "Hi! Tell me about yourself."}'
+        return completion('{"brief": "Backend role, senior, Python.", "opening": "Hi! Tell me about yourself."}')
 
-    monkeypatch.setattr(service.gateway, "complete", fake_complete)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete)
 
     await service.start_interview("u", "behavioral", "gemini", "r", "JD " * 5000)
 
@@ -79,9 +81,9 @@ async def test_setup_is_one_embed_and_one_llm_call_and_stores_brief(monkeypatch,
 @pytest.mark.asyncio
 async def test_setup_falls_back_when_model_ignores_json_format(monkeypatch, start_mocks):
     async def fake_complete(user_id, provider, messages, options=None):
-        return "Hello, I'm your interviewer. What brings you here?"
+        return completion("Hello, I'm your interviewer. What brings you here?")
 
-    monkeypatch.setattr(service.gateway, "complete", fake_complete)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete)
 
     await service.start_interview("u", "behavioral", "gemini", "r", "Backend engineer JD")
 

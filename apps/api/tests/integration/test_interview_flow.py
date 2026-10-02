@@ -120,12 +120,22 @@ async def test_setup_failure_marks_interview_aborted_and_returns_clean_error(cli
     assert [x["status"] for x in rows] == ["aborted"]
 
 
-async def test_setup_survives_truncated_json_without_showing_raw_json(client, keyed):
+async def test_setup_repairs_truncated_json_with_one_more_try(client, keyed):
     keyed.gemini.script = ['{"brief": "short", "opening": "Hello there, tell me about yourse']
     r, _ = await _start(client, keyed)
     assert r.status_code == 201
     text = keyed.db.rows("interview_transcripts", interview_id=r.json()["id"])[0]["text"]
-    assert not text.lstrip().startswith("{") and "Hello there" in text
+    assert not text.lstrip().startswith("{") and text  # the repair reply was valid
+    assert len(keyed.gemini.chat_calls) == 2  # first attempt + exactly one repair
+
+
+async def test_setup_never_shows_raw_json_even_when_the_repair_fails_too(client, keyed):
+    broken = '{"brief": "short", "opening": "Hello there, tell me about yourse'
+    keyed.gemini.script = [broken, "still not json at all"]
+    r, _ = await _start(client, keyed)
+    assert r.status_code == 201
+    text = keyed.db.rows("interview_transcripts", interview_id=r.json()["id"])[0]["text"]
+    assert not text.lstrip().startswith("{") and "Hello there" in text  # salvaged from the first attempt
 
 
 async def test_coding_interview_with_empty_question_bank_starts_with_no_questions(client, keyed):

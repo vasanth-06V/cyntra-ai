@@ -1,5 +1,7 @@
 import pytest
 
+from tests.helpers import completion
+
 from app.ats import requirements_extractor
 from app.ats.requirements_extractor import _extract_json, extract_requirements
 
@@ -30,9 +32,9 @@ async def test_extract_requirements_fills_in_defaults_for_missing_fields(monkeyp
 
     async def fake_complete(user_id, provider, messages, options=None):
         seen["options"] = options
-        return '{"must_have": ["Python"]}'
+        return completion('{"must_have": ["Python"]}')
 
-    monkeypatch.setattr(requirements_extractor.gateway, "complete", fake_complete)
+    monkeypatch.setattr(requirements_extractor.gateway, "complete_full", fake_complete)
 
     result = await extract_requirements("user-1", "gemini", "some JD text")
 
@@ -58,9 +60,9 @@ async def test_same_jd_is_served_from_cache_and_jd_is_truncated(monkeypatch):
 
     async def fake_complete(user_id, provider, messages, options=None):
         calls.append(messages[0].content)
-        return '{"must_have": ["Go"]}'
+        return completion('{"must_have": ["Go"]}')
 
-    monkeypatch.setattr(requirements_extractor.gateway, "complete", fake_complete)
+    monkeypatch.setattr(requirements_extractor.gateway, "complete_full", fake_complete)
     jd = "word " * 20000
 
     first = await extract_requirements("u1", "gemini", jd)

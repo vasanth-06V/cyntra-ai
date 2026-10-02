@@ -31,18 +31,22 @@ from typing import TypeVar
 
 from fastapi import status
 
+from pydantic import BaseModel, ValidationError
+
 from app.core.errors import AppError
 from app.core.security import decrypt_key
 from app.db.keys import get_key_row, insert_notification as notify_user
 from app.llm import usage as usage_log
 from app.llm.budget import estimate_messages_tokens, estimate_tokens, trim_to_sentence
 from app.llm.completion import Completion
+from app.llm.json_utils import extract_json
 from app.llm.keystate import cooldowns, key_hash, seconds_until_pacific_midnight
 from app.llm.limiter import limiter
 from app.llm.models import FALLBACKS, timeout_for
 from app.llm.options import LLMOptions, Usage
 from app.providers.base import (
     Message,
+    MessageRole,
     ProviderAuthError,
     ProviderBadRequestError,
     ProviderBlockedError,
@@ -58,6 +62,7 @@ from app.rag.embeddings import embed_texts
 logger = logging.getLogger("app.llm")
 
 T = TypeVar("T")
+M = TypeVar("M", bound=BaseModel)
 
 # Base delays (seconds) between attempts when a provider is temporarily
 # overloaded: 3 attempts in total. Each wait is jittered, and a provider's own
@@ -426,6 +431,82 @@ async def complete(
 ) -> str:
     """One-shot (non-streaming) completion; the reply text."""
     return (await complete_full(user_id, provider, messages, options)).text
+
+
+class StructuredOutputError(Exception):
+    """The model never produced JSON that fits the schema (even after one
+    repair attempt). `raw` is its last reply, for callers with a fallback."""
+
+    def __init__(self, raw: str, problem: str):
+        super().__init__(problem)
+        self.raw = raw  # the model's first attempt (the repair reply is usually worse)
+        self.problem = problem
+
+
+def _short(problem: Exception) -> str:
+    return " ".join(str(problem).split())[:300]
+
+
+async def complete_structured(
+    user_id: str,
+    provider: str,
+    messages: Sequence[Message],
+    schema: type[M],
+    options: LLMOptions | None = None,
+) -> M:
+    """A completion whose reply must be one JSON object matching `schema` (a
+    pydantic model). Runs in the provider's JSON mode; if the reply doesn't
+    parse or validate it gets exactly one more try -- with more room if it was
+    cut off, otherwise with the problem spelled out -- and then raises
+    StructuredOutputError. Outcomes are logged so JSON validity can be tracked
+    per feature and prompt version."""
+    base = dataclasses.replace(options or LLMOptions(), json_mode=True)
+    completion = await complete_full(user_id, provider, messages, base)
+    first_text = completion.text
+
+    problem = ""
+    for attempt in (0, 1):
+        try:
+            result = schema.model_validate(extract_json(completion.text))
+            _log_structured(base, "ok" if attempt == 0 else "repaired")
+            return result
+        except (ValueError, ValidationError) as exc:
+            problem = _short(exc)
+            if attempt == 1:
+                break
+            if completion.truncated and base.max_output_tokens:
+                # Cut off mid-object: ask again with room, not with a lecture.
+                retry_options = dataclasses.replace(base, max_output_tokens=base.max_output_tokens * 2)
+                retry_messages = list(messages)
+            else:
+                retry_options = base
+                retry_messages = [
+                    *messages,
+                    Message(role=MessageRole.ASSISTANT, content=completion.text[:2000]),
+                    Message(
+                        role=MessageRole.USER,
+                        content=(
+                            "That was not usable. Reply with ONLY one valid JSON object that "
+                            f"matches the requested format. Problem: {problem}"
+                        ),
+                    ),
+                ]
+            completion = await complete_full(user_id, provider, retry_messages, retry_options)
+
+    _log_structured(base, "failed")
+    raise StructuredOutputError(first_text, problem)
+
+
+def _log_structured(options: LLMOptions, outcome: str) -> None:
+    logger.info(
+        "structured_output",
+        extra={
+            "feature": options.feature,
+            "prompt_id": options.prompt_id,
+            "prompt_version": options.prompt_version,
+            "outcome": outcome,
+        },
+    )
 
 
 async def stream(
