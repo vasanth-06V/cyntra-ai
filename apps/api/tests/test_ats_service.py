@@ -13,6 +13,9 @@ def _gemini_key_row():
     return {"id": "key-1", "encrypted_key": "gemini-key"}
 
 
+embed_calls: list[list[str]] = []
+
+
 @pytest.fixture(autouse=True)
 def _common_mocks(monkeypatch):
     monkeypatch.setattr(service, "decrypt_key", lambda encrypted: encrypted)
@@ -26,7 +29,13 @@ def _common_mocks(monkeypatch):
     monkeypatch.setattr(
         service, "get_key_row", lambda user_id, provider, slot: _async_value(_gemini_key_row())
     )
-    monkeypatch.setattr(service, "embed_text", lambda api_key, text: _async_value([0.1, 0.2]))
+    embed_calls.clear()
+
+    async def fake_embed_texts(api_key, texts, usage=None):
+        embed_calls.append(list(texts))
+        return [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setattr(service, "embed_texts", fake_embed_texts)
     monkeypatch.setattr(
         service,
         "match_resume_chunks",
@@ -112,3 +121,28 @@ async def test_score_resume_raises_429_when_feedback_generation_exhausts_both_ke
         await service.score_resume("user-1", "resume-1", "gemini", "some JD")
 
     assert exc_info.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_all_keywords_are_embedded_in_one_request(monkeypatch):
+    # The free tier counts requests, not texts: 20 keywords must be 1 request.
+    keywords = [f"skill-{i}" for i in range(18)]
+
+    async def fake_extract_requirements(user_id, provider, jd_text):
+        return {
+            "must_have": keywords[:12],
+            "nice_to_have": keywords[12:],
+            "experience_level": "mid",
+            "title": "Eng",
+        }
+
+    async def fake_generate_feedback(*args, **kwargs):
+        return "ok"
+
+    monkeypatch.setattr(service, "extract_requirements", fake_extract_requirements)
+    monkeypatch.setattr(service, "generate_feedback", fake_generate_feedback)
+
+    await service.score_resume("user-1", "resume-1", "gemini", "some JD")
+
+    assert len(embed_calls) == 1
+    assert embed_calls[0] == keywords

@@ -7,7 +7,7 @@ from app.core.security import decrypt_key
 from app.core.storage import download_bytes
 from app.keys.service import get_key_row
 from app.rag.chunking import chunk_text
-from app.rag.embeddings import embed_chunks
+from app.rag.embeddings import embed_texts
 from app.rag.parsing import extract_text
 
 
@@ -53,7 +53,7 @@ async def process_resume(user_id: str, resume_id: str) -> int:
             detail="No extractable text found in this file",
         )
 
-    embeddings = await embed_chunks(decrypt_key(gemini_key["encrypted_key"]), chunks)
+    embeddings = await embed_texts(decrypt_key(gemini_key["encrypted_key"]), chunks)
 
     supabase = get_supabase()
 

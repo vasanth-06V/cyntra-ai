@@ -8,7 +8,7 @@ from app.ats.scorer import composite_score, formatting_score, keyword_score, mis
 from app.core.db import get_supabase
 from app.core.security import decrypt_key
 from app.keys.service import BothKeysFailedError, get_key_row
-from app.rag.embeddings import embed_text
+from app.rag.embeddings import embed_texts
 from app.rag.retrieval import match_resume_chunks
 
 
@@ -41,11 +41,14 @@ async def _semantic_score(resume_id: str, requirements: dict, gemini_api_key: st
     if not terms:
         return 1.0
 
-    similarities = []
-    for term in terms:
-        embedding = await embed_text(gemini_api_key, term)
-        matches = await match_resume_chunks(resume_id, embedding, match_count=1)
-        similarities.append(max(0.0, matches[0]["similarity"]) if matches else 0.0)
+    # One embedding request for every keyword (was one per keyword, ~20 per
+    # run). The per-keyword resume lookups are plain DB queries -- no model
+    # quota -- so they run concurrently.
+    embeddings = await embed_texts(gemini_api_key, terms)
+    matches = await asyncio.gather(
+        *(match_resume_chunks(resume_id, e, match_count=1) for e in embeddings)
+    )
+    similarities = [max(0.0, m[0]["similarity"]) if m else 0.0 for m in matches]
     return sum(similarities) / len(similarities)
 
 

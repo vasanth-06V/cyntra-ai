@@ -69,16 +69,20 @@ class _FakeSupabase:
 
 @pytest.mark.asyncio
 async def test_process_resume_success_stores_chunks_and_embeddings(monkeypatch, _common_mocks):
-    async def fake_embed_chunks(api_key, chunks):
+    embed_requests = []
+
+    async def fake_embed_texts(api_key, chunks):
         assert api_key == "gemini-key"
+        embed_requests.append(list(chunks))
         return [[0.1, 0.2]] * len(chunks)
 
-    monkeypatch.setattr(service, "embed_chunks", fake_embed_chunks)
+    monkeypatch.setattr(service, "embed_texts", fake_embed_texts)
     monkeypatch.setattr(service, "chunk_text", lambda text: ["chunk one", "chunk two"])
 
     count = await service.process_resume("user-1", "resume-1")
 
     assert count == 2
+    assert embed_requests == [["chunk one", "chunk two"]]  # all chunks, one request
     inserts = _common_mocks["inserts"]
     assert inserts[0][0] == "resume_chunks"
     inserted_rows = inserts[0][1]
