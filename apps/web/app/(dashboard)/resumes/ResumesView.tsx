@@ -20,8 +20,9 @@ export function ResumesView() {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // `loading` starts true, so the first load shows the spinner; later reloads
+  // refresh the list in place instead of flashing it away.
   async function loadResumes() {
-    setLoading(true);
     try {
       const res = await fetch("/api/resumes");
       const body = await res.json();
@@ -34,8 +35,19 @@ export function ResumesView() {
     }
   }
 
+  // Initial load is written out inline: calling loadResumes() from an effect
+  // makes React treat its state updates as synchronous in the effect body.
   useEffect(() => {
-    loadResumes();
+    fetch("/api/resumes")
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "Could not load resumes.");
+        setResumes(body);
+      })
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Could not load resumes.")
+      )
+      .finally(() => setLoading(false));
   }, []);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {

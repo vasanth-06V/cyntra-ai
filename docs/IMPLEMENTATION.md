@@ -288,10 +288,10 @@ create table interview_reports (
 ```python
 class ProviderAdapter(ABC):
     async def validate(self, api_key: str) -> bool: ...
-    async def chat(self, api_key: str, messages: list[Message], stream: bool = True) -> AsyncIterator[str]: ...
-    async def embed(self, api_key: str, text: str) -> list[float]: ...  # only Gemini implements this meaningfully
+    async def chat(self, api_key, messages, stream=True, options: LLMOptions | None = None, usage: Usage | None = None) -> AsyncIterator[str]: ...
+    async def embed_many(self, api_key, texts: list[str], usage=None) -> list[list[float]]: ...  # only Gemini implements this
 ```
-Each of `gemini.py`, `claude.py`, `groq.py` implements this contract using its own SDK. `groq.py` and `claude.py` raise `NotImplementedError` on `embed()` — the RAG layer always routes embedding calls through the Gemini adapter regardless of the user's chat-model choice.
+Each of `gemini.py`, `claude.py`, `groq.py` implements this contract using its own SDK and maps provider errors to `ProviderRateLimitError`, `ProviderUnavailableError`, `ProviderAuthError` or `ProviderBlockedError`. `groq.py` and `claude.py` have no embeddings API; the RAG layer always embeds through Gemini. Adapters are thin: features never call them directly (see 6.4).
 
 ### 6.2 Key lifecycle
 1. **Submit**: `POST /keys` `{ provider, slot, api_key }` → FastAPI encrypts (`Fernet`, server-held secret key from env) → stores in `provider_keys` with `is_valid = false`.
@@ -300,12 +300,27 @@ Each of `gemini.py`, `claude.py`, `groq.py` implements this contract using its o
 4. **Delete/replace**: `DELETE /keys/{id}`, or resubmit same provider+slot to overwrite.
 5. **Onboarding gate**: `(auth)/onboarding/page.tsx` blocks progression to the dashboard until a `provider=gemini, slot=primary` key exists with `is_valid = true`.
 
-### 6.3 Runtime failover (used by chat, interviews, ATS)
-A shared helper `keys/service.py::call_with_failover(user_id, provider, fn)`:
-1. Fetch primary key for `provider`; call `fn(primary_key)`.
-2. If the call raises a rate-limit/quota error (provider-specific exception mapped to a common `ProviderRateLimitError`), fetch backup key (if present) and retry `fn(backup_key)` once.
-3. On success via backup, enqueue a one-shot notification for the user (simplest approach: a row in a lightweight `notifications` table or a WebSocket/SSE push if the user is in an active session) — "Primary key limit reached, switched to backup."
-4. If backup also fails (or doesn't exist), raise the error up to the caller, which surfaces a clear error state to the UI.
+### 6.3 Runtime failover
+Implemented once, in the gateway (6.4): primary key first; on a rate-limit/quota error, the backup key once (with a one-shot notification to the user); if both fail or there is no backup, a clear 429. Nothing is retried or failed over after streamed output has started.
+
+### 6.4 LLM gateway (`apps/api/app/llm/`) -- all model traffic goes through it
+```
+gateway.py      complete() / stream() / embed(): limiter -> adapter -> transient retry -> backup-key failover -> usage record
+options.py      LLMOptions(task, max_output_tokens, temperature, json_mode), Usage
+models.py       task -> model per provider; the ONE place to fix a retired model
+budget.py       estimate_tokens (chars/4), truncate, fit_to_budget, ensure_user_first
+limiter.py      per-user sliding-window RPM per provider (queues up to 20 s, then 429)
+usage.py        records requests/tokens per user/provider/kind/day via RPC record_llm_usage (never fails a request)
+router.py       GET /usage -> today's totals (shown under Settings -> API Keys)
+json_utils.py   extract_json (fallback parser; JSON mode is the primary path)
+ttl_cache.py    in-process TTL cache (ATS requirements; nothing persisted)
+prompts/        interview.py, ats.py, resume.py -- every prompt template lives here
+```
+Errors surface as HTTP errors: 412 no key, 429 quota / both keys / local limit, 503 provider overloaded after retries, 400 key rejected, 422 reply blocked by the provider's safety filter.
+
+**Prompt rules**: static prefix first; terse imperative text; send only the current phase's instruction; cap output both in the prompt and with `max_output_tokens`; provider JSON mode instead of prose; never resend distilled data (JD -> `interviews.brief`, old turns -> incremental `running_summary` + `summarized_through_turn`, resume -> `resumes.digest`); truncate user text; the first non-system message is always a user turn.
+
+**Request economy**: embeddings batched (one request per list); interview turn = 1 call (prompt <= 1,200 tokens, reply <= 160); summary every 8 new turns on only the new turns; chat sends the last 10 messages (<= 2,000 tokens); ATS requirements cached per (user, JD hash). Free-tier Gemini quotas are per Google *project*, so a backup key only helps if it comes from a different project.
 
 ---
 

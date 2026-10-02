@@ -10,6 +10,7 @@ Errors surface as HTTPException so every endpoint reports them the same way:
   412  no key configured
   429  both keys rate-limited / no backup / local rate limit
   503  provider still overloaded after retries
+  422  the provider declined to answer (safety filter)
   400  the provider rejected the key itself
 
 One hard rule, kept from the chat design: nothing is retried or failed over
@@ -33,6 +34,7 @@ from app.llm.options import LLMOptions, Usage
 from app.providers.base import (
     Message,
     ProviderAuthError,
+    ProviderBlockedError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
@@ -73,6 +75,13 @@ def _overloaded(provider: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail=f"{provider.capitalize()} is temporarily overloaded -- please try again in a moment.",
+    )
+
+
+def _blocked(provider: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=f"{provider.capitalize()} declined to answer this -- try rephrasing your message.",
     )
 
 
@@ -124,6 +133,8 @@ async def _with_failover(
         raise _overloaded(provider) from exc
     except ProviderAuthError as exc:
         raise _key_rejected(provider) from exc
+    except ProviderBlockedError as exc:
+        raise _blocked(provider) from exc
 
 
 async def complete(
@@ -225,6 +236,10 @@ async def stream(
         if chunk_sent:
             raise
         raise _key_rejected(provider) from exc
+    except ProviderBlockedError as exc:
+        if chunk_sent:
+            raise
+        raise _blocked(provider) from exc
 
     await usage_log.record(
         user_id,

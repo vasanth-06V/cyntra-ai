@@ -457,4 +457,10 @@ The "20 requests/day" the user felt was the *non-lite* model's limit, which my e
 
 **Result**: 139 mocked tests pass. Supabase security advisor: only the known "Leaked Password Protection" WARN. Known, accepted gaps: Claude/Groq `validate()` still spend one generation request (plan only covered Gemini); Gemini safety-blocked replies raise an unmapped ValueError (500); per-key client cache holds API keys in process memory; `current_question_index` and the ATS use of the resume digest were dropped from the plan; the gateway section of `IMPLEMENTATION.md` is still to be written. Nothing verified live.
 
+### [2026-10-02] Audit gaps closed
+
+**Action**: (1) Safety-blocked / empty Gemini replies: new `ProviderBlockedError`; the Gemini adapter raises it when a reply has no text (non-stream `.text` ValueError, or a stream that produced nothing) while tolerating text-less finish chunks; the gateway maps it to a clear **422** ("declined to answer -- try rephrasing"), never fails over (another key wouldn't help) and never retries; after streamed output has begun it propagates as before. (2) The two eslint `set-state-in-effect` errors (`QuestionBankView.tsx`, `ResumesView.tsx`): the initial load is written inline in the effect as a promise chain (calling a state-setting function from an effect trips the rule); post-mutation reloads keep using `load()` and now refresh in place without flashing the spinner. (3) `docs/IMPLEMENTATION.md` sections 6.1 / 6.3 rewritten and new 6.4 "LLM gateway" added (module map, error codes, prompt rules, request economy, per-project quota note).
+
+**Result**: 143 mocked backend tests pass; `tsc` and `eslint` clean. Still open and deliberately not changed: Claude/Groq `validate()` spend one generation request; the per-key Gemini client cache holds keys in process memory (bounded to 32). Nothing verified live.
+
 *(Next: Phase 7 -- coding platform, once the user says to continue.)*

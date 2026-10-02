@@ -26,8 +26,9 @@ export function QuestionBankView() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // `loading` starts true, so the first load shows the spinner; later reloads
+  // refresh the list in place instead of flashing it away.
   async function load() {
-    setLoading(true);
     try {
       setQuestions(await apiClient.get<Question[]>("/interviews/question-bank"));
       setLoadError(null);
@@ -38,8 +39,16 @@ export function QuestionBankView() {
     }
   }
 
+  // Initial load is written out inline: calling load() from an effect makes
+  // React treat its state updates as synchronous in the effect body.
   useEffect(() => {
-    load();
+    apiClient
+      .get<Question[]>("/interviews/question-bank")
+      .then(setQuestions)
+      .catch((err) =>
+        setLoadError(err instanceof ApiError ? err.message : "Could not load the question bank.")
+      )
+      .finally(() => setLoading(false));
   }, []);
 
   function resetForm() {

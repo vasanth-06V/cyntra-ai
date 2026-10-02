@@ -36,6 +36,12 @@ class ProviderAuthError(Exception):
     """Raised when the provider rejects the key itself (invalid/revoked)."""
 
 
+class ProviderBlockedError(Exception):
+    """The provider declined to answer (e.g. Gemini's safety filter returned
+    no text). Retrying or switching keys won't help; the caller gets a clear
+    error instead of an opaque 500."""
+
+
 class ProviderAdapter(ABC):
     """Common interface every LLM provider module implements, so
     orchestration code (chat, interviews, ATS scoring) never has to branch

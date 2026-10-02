@@ -23,6 +23,7 @@ from app.providers.base import (
     MessageRole,
     ProviderAdapter,
     ProviderAuthError,
+    ProviderBlockedError,
     ProviderRateLimitError,
     ProviderUnavailableError,
 )
@@ -134,16 +135,30 @@ class GeminiAdapter(ProviderAdapter):
                 response = await model.generate_content_async(
                     contents, stream=True, generation_config=config
                 )
+                produced = False
                 async for chunk in response:
-                    if chunk.text:
-                        yield chunk.text
+                    try:
+                        text = chunk.text
+                    except ValueError:
+                        continue  # a chunk with no text part (e.g. the finish marker)
+                    if text:
+                        produced = True
+                        yield text
                 _record_usage(usage, response)
+                if not produced:
+                    raise ProviderBlockedError("Gemini returned no text (blocked or empty)")
             else:
                 response = await model.generate_content_async(
                     contents, generation_config=config
                 )
                 _record_usage(usage, response)
-                yield response.text
+                try:
+                    text = response.text
+                except ValueError as exc:
+                    raise ProviderBlockedError(
+                        "Gemini returned no text (blocked or empty)"
+                    ) from exc
+                yield text
         except (PermissionDenied, Unauthenticated) as exc:
             raise ProviderAuthError(str(exc)) from exc
         except ResourceExhausted as exc:
