@@ -1,6 +1,6 @@
 # CyntraAI — the three pillars: audit and plan
 
-Status: **APPROVED 2026-10-02 (rev 2). M0 and M1 done; M2 is next.**
+Status: **APPROVED 2026-10-02 (rev 2). M0, M1 and M2 done; M3 (RAG v2) is next.**
 Sources: three independent read-only audits (RAG, LLM, backend) run on 2026-10-02 against commit `4f81442`, each rated against best practice with file/line evidence. Claims below were verified in code/DB unless marked *(to verify)*. No live provider calls were made.
 
 ---

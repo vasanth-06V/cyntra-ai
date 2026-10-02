@@ -289,9 +289,9 @@ create table interview_reports (
 class ProviderAdapter(ABC):
     async def validate(self, api_key: str) -> bool: ...
     async def chat(self, api_key, messages, stream=True, options: LLMOptions | None = None, usage: Usage | None = None) -> AsyncIterator[str]: ...
-    async def embed_many(self, api_key, texts: list[str], usage=None) -> list[list[float]]: ...  # only Gemini implements this
+    async def embed_many(self, api_key, texts, usage=None, kind="doc"|"query") -> list[list[float]]: ...  # only Gemini implements this
 ```
-Each of `gemini.py`, `claude.py`, `groq.py` implements this contract using its own SDK and maps provider errors to `ProviderRateLimitError`, `ProviderUnavailableError`, `ProviderAuthError` or `ProviderBlockedError`. `groq.py` and `claude.py` have no embeddings API; the RAG layer always embeds through Gemini. Adapters are thin: features never call them directly (see 6.4).
+`gemini.py` talks to Gemini's **REST API with httpx** (no SDK: the legacy SDK is deprecated, its successor conflicts with supabase's httpx pin, and REST gives per-request keys in a header, real timeouts, raw error bodies and thinking control). `claude.py` / `groq.py` use their SDKs with `max_retries=0` and explicit timeouts, so the gateway is the only retry layer. Every adapter maps provider failures to typed errors: `ProviderRateLimitError(kind=rpm|rpd, retry_after)`, `ProviderUnavailableError(retry_after)`, `ProviderTimeoutError`, `ProviderAuthError`, `ProviderBadRequestError`, `ProviderConfigError` (retired model), `ProviderBlockedError`. Adapters report `finish_reason`, model, thought tokens and time-to-first-token through `Usage`. Features never call adapters directly (see 6.4).
 
 ### 6.2 Key lifecycle
 1. **Submit**: `POST /keys` `{ provider, slot, api_key }` → FastAPI encrypts (`Fernet`, server-held secret key from env) → stores in `provider_keys` with `is_valid = false`.
@@ -305,22 +305,29 @@ Implemented once, in the gateway (6.4): primary key first; on a rate-limit/quota
 
 ### 6.4 LLM gateway (`apps/api/app/llm/`) -- all model traffic goes through it
 ```
-gateway.py      complete() / stream() / embed(): limiter -> adapter -> transient retry -> backup-key failover -> usage record
-options.py      LLMOptions(task, max_output_tokens, temperature, json_mode), Usage
-models.py       task -> model per provider; the ONE place to fix a retired model
-budget.py       estimate_tokens (chars/4), truncate, fit_to_budget, ensure_user_first
-limiter.py      per-user sliding-window RPM per provider (queues up to 20 s, then 429)
-usage.py        records requests/tokens per user/provider/kind/day via RPC record_llm_usage (never fails a request)
-router.py       GET /usage -> today's totals (shown under Settings -> API Keys)
-json_utils.py   extract_json (fallback parser; JSON mode is the primary path)
-ttl_cache.py    in-process TTL cache (ATS requirements; nothing persisted)
+gateway.py      complete()/complete_full()/complete_structured()/stream()/embed():
+                cooldown check -> per-key limiter -> adapter (own timeout) -> jittered retry (honours Retry-After)
+                -> backup-key failover -> usage record -> one structured log line; whole non-streaming call has a deadline
+options.py      LLMOptions(task, caps, temperature, json_mode, timeout_s, feature, priority, prompt_id/version, trim_on_length, model_override), Usage
+completion.py   Completion(text, finish_reason, usage, model, latency, attempts, failed_over)
+models.py       task -> model, per-task timeouts, Gemini thinking/allowance traits, fallback list; the ONE place to fix a retired model
+keystate.py     key fingerprints (limits are per key/project), cooldowns for spent keys, Pacific quota day, seconds-to-reset
+limiter.py      per-KEY sliding-window RPM with priority lanes (background can't use the last quarter)
+usage.py        daily totals per user/provider/kind (Gemini booked to the Pacific day) incl. thought tokens
+schemas.py      pydantic shapes for every JSON the model returns; json_utils.extract_json (raw_decode)
+untrusted.py    prompt-injection standard: data tags with random ids, sanitizers, reply filter
+budget.py       estimate_tokens (chars/4), truncate, trim_to_sentence, fit_to_budget, ensure_user_first
 prompts/        interview.py, ats.py, resume.py -- every prompt template lives here
 ```
-Errors surface as HTTP errors: 412 no key, 429 quota / both keys / local limit, 503 provider overloaded after retries, 400 key rejected, 422 reply blocked by the provider's safety filter.
+Errors surface as `AppError` with stable codes: 412 `key_missing`, 429 `quota_exhausted`, 503 `provider_overloaded`, 503 `provider_misconfigured` (stale model name), 504 `provider_timeout`, 400 `key_rejected`, 422 `reply_blocked`, 502 `provider_bad_request` / `empty_reply` / `invalid_model_output`.
 
-**Prompt rules**: static prefix first; terse imperative text; send only the current phase's instruction; cap output both in the prompt and with `max_output_tokens`; provider JSON mode instead of prose; never resend distilled data (JD -> `interviews.brief`, old turns -> incremental `running_summary` + `summarized_through_turn`, resume -> `resumes.digest`); truncate user text; the first non-system message is always a user turn.
+**Rules the gateway enforces**: never retry or fail over after streamed output began; per-key (not per-user) limits, because quota belongs to the key's project; a daily-quota (`rpd`) 429 benches the key until Pacific midnight and fails over immediately, a short per-minute (`rpm`) 429 is waited out once; thinking is kept minimal and its tokens are budgeted and reported; truncated replies are trimmed to whole sentences (or retried with room, for JSON); streaming usage and the chat exchange are recorded even if the client disconnects.
 
-**Request economy**: embeddings batched (one request per list); interview turn = 1 call (prompt <= 1,200 tokens, reply <= 160); summary every 8 new turns on only the new turns; chat sends the last 10 messages (<= 2,000 tokens); ATS requirements cached per (user, JD hash). Free-tier Gemini quotas are per Google *project*, so a backup key only helps if it comes from a different project.
+**Prompt rules**: static prefix first; terse imperative text; send only the current phase's instruction; cap output both in the prompt and with `max_output_tokens`; JSON via provider JSON mode + pydantic validation + one repair retry; never resend distilled data (JD -> `interviews.brief`, old turns -> incremental `running_summary`, resume -> `resumes.digest`); the first non-system message is always a user turn.
+
+**Prompt-injection standard** (`llm/untrusted.py`): everything untrusted (JD, resume, digest, candidate answers, and anything *derived* from them) is wrapped in `<data kind=".." id="rand">..</data id="rand">` with a fresh id per request; the system prompt states that such text is data; brief and summary are never in the system role (they ride in the conversation as data) and are sanitized/capped before being stored; replies pass a verbatim-leak filter and label/tag cleanup. Covered by an offline injection corpus (`tests/test_prompt_injection.py`).
+
+**Evidence over assumption**: wire formats were written from documentation; `scripts/llm_smoke.py` (owner-run, <=10 spaced requests, key from the environment) records real responses to `tests/fixtures/gemini/`, which `tests/test_recorded_fixtures.py` then replays through the adapter.
 
 ---
 

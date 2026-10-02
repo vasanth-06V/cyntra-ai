@@ -24,6 +24,10 @@ Format: `fact — source — verified`.
 ## Judge0
 - Self-hosting is free; official hosted plans reported at about EUR 27/month for 2,000 submissions/day (EUR 54 for 5,000, EUR 107 for 10,000); the free shared RapidAPI key is reported at about 50 requests/day (anecdotal) — web search results (judge0.com, RapidAPI pricing) — 2026-10-02 — **verify before Phase 7**
 
+## Assumed from documentation, awaiting evidence (record with `python -m scripts.llm_smoke --record`)
+- Gemini REST: `generateContent`, `streamGenerateContent?alt=sse`, `models/gemini-embedding-001:batchEmbedContents`, `GET /models`; key via `x-goog-api-key` header; `generationConfig.thinkingConfig` takes `thinkingBudget` or `thinkingLevel` (whether `thinkingLevel: "minimal"` is accepted for `gemini-flash-lite-latest` is unverified -- the adapter drops it automatically if rejected)
+- 429 bodies: standard Google error JSON with `QuotaFailure` / `RetryInfo` details (the docs do not show them; quota type is parsed from `quotaId` containing PerDay/PerMinute)
+
 ## Not yet measured (to be recorded by the user-run smoke script)
 - Real Gemini 429/503/400 response bodies and any retry/quota fields
 - Time to first token and thinking-token counts for our configured Gemini alias
