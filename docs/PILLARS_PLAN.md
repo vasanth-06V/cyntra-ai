@@ -113,7 +113,7 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 | `0019` (exists) | audit hardening | M0 |
 | `0020_rag_v2` | `embed_model/section/difficulty/topic/content_hash`, tsvector+GIN, multi/v2/replace RPCs, **question_bank lockdown** | M3 |
 | `0021_atomic_turns` | `append_interview_turns` (row lock, both turns in one insert), `admin_permissions` unique grant | M4.1 |
-| `0022_jobs` | `jobs` table + policies | M4.2 |
+| `0022_jobs` | `jobs` table, one active job per user+kind, RLS locked | M4.2 (written; apply with go-ahead) |
 | later (deferred by owner 2026-10-03) | resume rename (`resumes.name`), 3-resume limit trigger, `ats_history` (last 10) | backlog |
 | `0023_llm_observability` | `llm_usage.feature/model/thought_tokens`, Pacific-day column for Gemini, prompt-version columns | M2 |
 | `0024_coding` | `code_submissions`, `test_results` | Phase 7 |

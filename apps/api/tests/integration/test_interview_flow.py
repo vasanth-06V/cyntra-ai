@@ -24,14 +24,35 @@ def _seed_questions(env, n=2, type_="coding"):
     ]
 
 
+class _Outcome:
+    """What a caller of the old synchronous start saw, rebuilt from the job."""
+
+    def __init__(self, status_code, body):
+        self.status_code, self._body = status_code, body
+
+    def json(self):
+        return self._body
+
+
 async def _start(client, env, user=USER_A, type_="coding", provider="gemini", jd="Senior Python role"):
+    """Starts an interview and waits for its setup job. Returns the interview
+    (status 200) when the job succeeded, the job's error when it failed, or the
+    immediate refusal (404/412/422) when the request was rejected up front."""
     resume = seed_processed_resume(env, user)
     r = await client.post(
         "/interviews",
         json={"type": type_, "provider": provider, "resume_id": resume["id"], "jd_text": jd},
         headers=as_user(user),
     )
-    return r, resume
+    if r.status_code != 202:
+        return r, resume
+    await background.drain()
+    started = r.json()
+    job = (await client.get(f"/jobs/{started['job_id']}", headers=as_user(user))).json()
+    if job["status"] == "failed":
+        return _Outcome(job["error"]["status"], {"error": job["error"], "detail": job["error"]["message"]}), resume
+    assert job["status"] == "succeeded", job
+    return await client.get(f"/interviews/{started['interview_id']}", headers=as_user(user)), resume
 
 
 @pytest.fixture
@@ -47,7 +68,7 @@ def keyed(env):
 async def test_start_interview_sets_up_and_flips_to_in_progress(client, keyed):
     questions = _seed_questions(keyed)
     r, resume = await _start(client, keyed)
-    assert r.status_code == 201
+    assert r.status_code == 200
     body = r.json()
     assert body["status"] == "in_progress" and body["phase"] == "intro"
     assert body["provider"] == "gemini" and body["resume_id"] == resume["id"]
@@ -110,7 +131,7 @@ async def test_groq_interview_uses_groq_for_chat_and_gemini_for_embeddings(clien
     seed_key(env, USER_A, "groq", "primary", "groq-a")
     _seed_questions(env, 2, "coding")  # a type that needs questions, so setup embeds the JD
     r, _ = await _start(client, env, provider="groq", type_="coding")
-    assert r.status_code == 201
+    assert r.status_code == 200
     assert env.groq.chat_calls and not env.gemini.chat_calls
     assert env.gemini.embed_calls and env.gemini.embed_calls[0].api_key == "gem-a"  # embeddings stay on Gemini
     assert env.gemini.embed_calls[0].kind == "query"
@@ -127,7 +148,7 @@ async def test_setup_failure_marks_interview_aborted_and_returns_clean_error(cli
 async def test_setup_repairs_truncated_json_with_one_more_try(client, keyed):
     keyed.gemini.script = ['{"brief": "short", "opening": "Hello there, tell me about yourse']
     r, _ = await _start(client, keyed)
-    assert r.status_code == 201
+    assert r.status_code == 200
     text = keyed.db.rows("interview_transcripts", interview_id=r.json()["id"])[0]["text"]
     assert not text.lstrip().startswith("{") and text  # the repair reply was valid
     assert len(keyed.gemini.chat_calls) == 2  # first attempt + exactly one repair
@@ -137,7 +158,7 @@ async def test_setup_never_shows_raw_json_even_when_the_repair_fails_too(client,
     broken = '{"brief": "short", "opening": "Hello there, tell me about yourse'
     keyed.gemini.script = [broken, "still not json at all"]
     r, _ = await _start(client, keyed)
-    assert r.status_code == 201
+    assert r.status_code == 200
     text = keyed.db.rows("interview_transcripts", interview_id=r.json()["id"])[0]["text"]
     assert not text.lstrip().startswith("{") and "Hello there" in text  # salvaged from the first attempt
 
@@ -146,7 +167,7 @@ async def test_coding_interview_with_empty_question_bank_starts_with_no_question
     """Characterisation of a plan gap: nothing warns or refuses when the bank
     has no questions for the type; the coding interview just has none."""
     r, _ = await _start(client, keyed)
-    assert r.status_code == 201
+    assert r.status_code == 200
     assert keyed.db.rows("interviews", id=r.json()["id"])[0]["selected_question_ids"] == []
 
 

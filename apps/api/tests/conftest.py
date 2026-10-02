@@ -3,6 +3,7 @@ import pytest
 from app.core import db as core_db
 
 from app.core import background
+from app.core import jobs as job_runner
 from app.core.throttle import throttle
 from app.llm import gateway
 from app.llm.keystate import cooldowns
@@ -30,6 +31,7 @@ def _reset_process_wide_state():
     cooldowns.clear()
     background._tasks.clear()
     background._active_keys.clear()
+    job_runner.reset()
     gateway._query_cache._data.clear()
     yield
     throttle.reset()

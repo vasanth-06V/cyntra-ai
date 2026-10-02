@@ -1,20 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Button } from "@/components/ui/Button";
 import { LoadingScene } from "@/components/three/LoadingScene";
 import {
   INTERVIEW_TYPE_LABELS,
-  type Interview,
   type InterviewProviderName,
   type InterviewType,
 } from "@/types/interviews";
+import type { Job, SetupStarted } from "@/types/jobs";
 import type { ProviderKey } from "@/types/keys";
 import type { Resume } from "@/types/resumes";
 
 const INTERVIEW_TYPES = Object.keys(INTERVIEW_TYPE_LABELS) as InterviewType[];
+
+const POLL_EVERY_MS = 1500;
+const GIVE_UP_AFTER_MS = 4 * 60 * 1000;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function InterviewSetupView() {
   const router = useRouter();
@@ -26,6 +31,15 @@ export function InterviewSetupView() {
   const [jdText, setJdText] = useState("");
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,17 +74,41 @@ export function InterviewSetupView() {
     if (!resumeId || !provider || !jdText.trim()) return;
 
     setStarting(true);
+    setProgress(null);
     setError(null);
 
     try {
-      const interview = await apiClient.post<Interview>("/interviews", {
+      // The server answers at once with a job; setup (questions, brief,
+      // opening message) runs in the background and is polled here.
+      const started = await apiClient.post<SetupStarted>("/interviews", {
         type,
         provider,
         resume_id: resumeId,
         jd_text: jdText,
       });
-      router.push(`/interviews/${interview.id}`);
+
+      const deadline = Date.now() + GIVE_UP_AFTER_MS;
+      while (mounted.current) {
+        const job = await apiClient.get<Job>(`/jobs/${started.job_id}`);
+        if (job.status === "succeeded") {
+          router.push(`/interviews/${started.interview_id}`);
+          return;
+        }
+        if (job.status === "failed") {
+          throw new ApiError(
+            job.error?.status ?? 500,
+            job.error?.message ?? "Could not set up the interview.",
+            job.error?.code
+          );
+        }
+        if (Date.now() > deadline) {
+          throw new ApiError(504, "Setting up is taking longer than expected -- please try again.");
+        }
+        setProgress(job.status === "queued" ? "Waiting for a free slot..." : job.progress);
+        await sleep(POLL_EVERY_MS);
+      }
     } catch (err) {
+      if (!mounted.current) return;
       setError(err instanceof ApiError ? err.message : "Could not start the interview.");
       setStarting(false);
     }
@@ -82,7 +120,7 @@ export function InterviewSetupView() {
         <LoadingScene className="h-64 w-64" />
         <h1 className="text-xl font-semibold">Setting up your interview…</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
-          Analyzing your resume and matching questions to the job description.
+          {progress ?? "Analyzing your resume and matching questions to the job description."}
         </p>
       </div>
     );

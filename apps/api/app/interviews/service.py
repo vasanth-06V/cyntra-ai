@@ -7,7 +7,9 @@ from fastapi import status
 
 from app.core import background
 from app.ats.requirements_extractor import cached_requirements
+from app.core import jobs as job_runner
 from app.core.errors import AppError
+from app.db import jobs as jobs_repo
 from app.db import interviews as interviews_repo
 from app.db import resumes as resumes_repo
 from app.interviews import summarizer
@@ -147,94 +149,167 @@ async def _select_questions(
     return [c["id"] for c in chosen]
 
 
-async def start_interview(
-    user_id: str, interview_type: str, provider: str, resume_id: str, jd_text: str
-) -> dict:
-    resume = await _get_owned_processed_resume(user_id, resume_id)
+async def _no_report(_text: str) -> None:
+    return None
 
+
+async def _validate_start(user_id: str, resume_id: str) -> dict:
+    """Everything that can be refused immediately (wrong resume, no key) is
+    refused before any row is created or any job started."""
+    resume = await _get_owned_processed_resume(user_id, resume_id)
     gemini_key = await get_key_row(user_id, "gemini", "primary")
     if not gemini_key:
         raise AppError(status.HTTP_412_PRECONDITION_FAILED, "key_missing", "A valid primary Gemini key is required to start an interview")
+    return resume
 
+
+async def _run_setup(
+    user_id: str,
+    interview_id: str,
+    interview_type: str,
+    provider: str,
+    resume_id: str,
+    resume: dict,
+    jd_text: str,
+    report,
+) -> None:
+    """The slow part of starting an interview: pick questions, write the brief
+    and the opening message, then open the interview. `report` is told which
+    step is running (the page shows it while polling the job)."""
     config = get_config(interview_type)
-    interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
+    resume_context = resume.get("digest")
 
+    await report("Reading your resume and the job description...")
+    # Embedding is only needed to pick questions or, with no digest yet, to
+    # find the resume's most relevant chunks. A behavioral interview with a
+    # digest on file spends no embedding request at all.
+    selected_question_ids: list[str] = []
+    query_vector: list[float] | None = None
+    if config.question_count > 0 or not resume_context:
+        query = _jd_query(user_id, jd_text)
+        query_vector = (await gateway.embed(user_id, [query], kind="query"))[0]
+
+    if config.question_count > 0:
+        await report("Choosing questions for you...")
+        selected_question_ids = await _select_questions(
+            user_id, interview_type, query_vector, config.question_count
+        )
+
+    if not resume_context:
+        rows = await match_resume_chunks_multi(resume_id, [query_vector], [""], per_query=3)
+        resume_context = truncate(
+            "\n\n".join(r["content"] for r in rows) or (resume["parsed_text"] or ""),
+            _RESUME_FALLBACK_TOKENS,
+        )
+
+    await report("Preparing your interviewer...")
+    boundary = new_boundary()
+    setup_prompt = SETUP_PROMPT.format(
+        type_line=config.system_prompt,
+        notice=NOTICE,
+        goal=goal_for(config.phases[0][0]),
+        resume=wrap("resume_digest", resume_context, boundary),
+        jd=wrap("job_description", truncate(jd_text, _JD_SETUP_TOKENS), boundary),
+    )
     try:
-        resume_context = resume.get("digest")
-
-        # Embedding is only needed to pick questions or, with no digest yet, to
-        # find the resume's most relevant chunks. A behavioral interview with a
-        # digest on file spends no embedding request at all.
-        selected_question_ids: list[str] = []
-        query_vector: list[float] | None = None
-        if config.question_count > 0 or not resume_context:
-            query = _jd_query(user_id, jd_text)
-            query_vector = (await gateway.embed(user_id, [query], kind="query"))[0]
-
-        if config.question_count > 0:
-            selected_question_ids = await _select_questions(
-                user_id, interview_type, query_vector, config.question_count
-            )
-
-        if not resume_context:
-            rows = await match_resume_chunks_multi(resume_id, [query_vector], [""], per_query=3)
-            resume_context = truncate(
-                "\n\n".join(r["content"] for r in rows) or (resume["parsed_text"] or ""),
-                _RESUME_FALLBACK_TOKENS,
-            )
-
-        boundary = new_boundary()
-        setup_prompt = SETUP_PROMPT.format(
-            type_line=config.system_prompt,
-            notice=NOTICE,
-            goal=goal_for(config.phases[0][0]),
-            resume=wrap("resume_digest", resume_context, boundary),
-            jd=wrap("job_description", truncate(jd_text, _JD_SETUP_TOKENS), boundary),
+        setup = await gateway.complete_structured(
+            user_id,
+            provider,
+            [Message(role=MessageRole.USER, content=setup_prompt)],
+            SetupOut,
+            _SETUP_OPTIONS,
         )
-        try:
-            setup = await gateway.complete_structured(
-                user_id,
-                provider,
-                [Message(role=MessageRole.USER, content=setup_prompt)],
-                SetupOut,
-                _SETUP_OPTIONS,
-            )
-            opening_message, brief = setup.opening, setup.brief
-        except gateway.StructuredOutputError as err:
-            # The model never produced usable JSON, even after a repair try:
-            # use whatever greeting can be salvaged and build the brief
-            # without another call.
-            opening_message = _salvage_opening(err.raw)
-            brief = ""
-        if not brief:
-            brief = truncate(
-                f"{truncate(jd_text, 150)}\nCandidate: {resume_context}", _BRIEF_MAX_TOKENS
-            )
-        # The brief is distilled from untrusted text and will be re-used in
-        # every later turn: sanitize it before it is stored.
-        brief = sanitize_derived(brief, _BRIEF_MAX_TOKENS)
-        opening_message = clean_reply(opening_message) or _FALLBACK_OPENING
-
-        now = datetime.now(UTC)
-        ends_at = now + timedelta(minutes=config.total_minutes)
-
-        await _update_interview(
-            interview_id,
-            {
-                "status": "in_progress",
-                "phase": config.phases[0][0],
-                "started_at": now.isoformat(),
-                "ends_at": ends_at.isoformat(),
-                "selected_question_ids": selected_question_ids,
-                "brief": brief,
-            },
+        opening_message, brief = setup.opening, setup.brief
+    except gateway.StructuredOutputError as err:
+        # The model never produced usable JSON, even after a repair try:
+        # use whatever greeting can be salvaged and build the brief
+        # without another call.
+        opening_message = _salvage_opening(err.raw)
+        brief = ""
+    if not brief:
+        brief = truncate(
+            f"{truncate(jd_text, 150)}\nCandidate: {resume_context}", _BRIEF_MAX_TOKENS
         )
-        await _append_transcript(interview_id, 0, "ai", opening_message)
+    # The brief is distilled from untrusted text and will be re-used in
+    # every later turn: sanitize it before it is stored.
+    brief = sanitize_derived(brief, _BRIEF_MAX_TOKENS)
+    opening_message = clean_reply(opening_message) or _FALLBACK_OPENING
+
+    now = datetime.now(UTC)
+    ends_at = now + timedelta(minutes=config.total_minutes)
+
+    await _update_interview(
+        interview_id,
+        {
+            "status": "in_progress",
+            "phase": config.phases[0][0],
+            "started_at": now.isoformat(),
+            "ends_at": ends_at.isoformat(),
+            "selected_question_ids": selected_question_ids,
+            "brief": brief,
+        },
+    )
+    await _append_transcript(interview_id, 0, "ai", opening_message)
+
+
+async def start_interview(
+    user_id: str, interview_type: str, provider: str, resume_id: str, jd_text: str
+) -> dict:
+    """Runs the whole setup inline and returns the interview (used directly by
+    tests; the API goes through begin_setup so the page can poll)."""
+    resume = await _validate_start(user_id, resume_id)
+    interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
+    try:
+        await _run_setup(
+            user_id, interview_id, interview_type, provider, resume_id, resume, jd_text, _no_report
+        )
     except Exception:
         await _update_interview(interview_id, {"status": "aborted"})
         raise
-
     return await _get_owned_interview(user_id, interview_id)
+
+
+SETUP_JOB = "interview_setup"
+
+
+async def begin_setup(
+    user_id: str, interview_type: str, provider: str, resume_id: str, jd_text: str
+) -> dict:
+    """Validates, creates the interview row and starts the setup as a job.
+    Returns {"job_id", "interview_id"} at once; the page polls GET /jobs/{id}.
+    If a setup is already running for this user (a double-click) that one is
+    returned instead of starting a second."""
+    existing = await jobs_repo.active_job(user_id, SETUP_JOB)
+    if existing is not None and job_runner.is_stale(existing):
+        # Nobody has touched it for minutes: its process is gone. Free the slot.
+        await job_runner.fail_stale(existing, "The previous setup stopped responding -- please try again.")
+        if existing.get("subject_id"):
+            await _update_interview(existing["subject_id"], {"status": "aborted"})
+        existing = None
+    if existing is not None:
+        return {"job_id": existing["id"], "interview_id": existing["subject_id"]}
+
+    resume = await _validate_start(user_id, resume_id)
+    interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
+
+    async def work(report) -> dict:
+        await _run_setup(
+            user_id, interview_id, interview_type, provider, resume_id, resume, jd_text, report
+        )
+        return {"interview_id": interview_id}
+
+    async def on_failure() -> None:
+        await _update_interview(interview_id, {"status": "aborted"})
+
+    try:
+        job, created = await job_runner.launch(user_id, SETUP_JOB, interview_id, work, on_failure)
+    except Exception:
+        await _update_interview(interview_id, {"status": "aborted"})
+        raise
+    if not created:
+        # Lost a race with a simultaneous request: drop the extra row.
+        await _update_interview(interview_id, {"status": "aborted"})
+    return {"job_id": job["id"], "interview_id": job["subject_id"]}
 
 
 # One answer at a time per interview (per process, like the limiter and the

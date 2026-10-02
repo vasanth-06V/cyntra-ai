@@ -11,6 +11,7 @@ from app.interviews.models import (
     QuestionIn,
     QuestionOut,
     QuestionUpdateIn,
+    SetupStartedOut,
     StartInterviewRequest,
     SubmitTurnRequest,
     TranscriptEntryOut,
@@ -70,11 +71,13 @@ async def delete_question(
 # --- Interview lifecycle ---
 
 
-@router.post("", response_model=InterviewOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=SetupStartedOut, status_code=status.HTTP_202_ACCEPTED)
 async def start_interview(
     body: StartInterviewRequest, user: AuthenticatedUser = Depends(limited("interviews.start", 4))
 ):
-    return await service.start_interview(
+    """Starts the setup as a job and returns at once; poll GET /jobs/{job_id}
+    (status, progress, error) and open the interview when it succeeds."""
+    return await service.begin_setup(
         user.user_id, body.type.value, body.provider.value, body.resume_id, body.jd_text
     )
 

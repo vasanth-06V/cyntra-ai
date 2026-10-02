@@ -44,6 +44,8 @@ DEFAULTS: dict[str, dict] = {
     },
     "question_bank": {"test_cases": None, "tags": None, "created_by": None, "difficulty": None, "topic": None, "embed_version": "legacy"},
     "notifications": {"is_read": False},
+    "jobs": {"status": "queued", "subject_id": None, "progress": None, "result": None, "error": None,
+             "started_at": None, "heartbeat_at": None, "finished_at": None},
 }
 
 
@@ -195,8 +197,15 @@ class _Query:
             made = []
             for p in payloads:
                 row = {**copy.deepcopy(DEFAULTS.get(self.table, {})), **copy.deepcopy(p)}
+                if self.table == "jobs" and row["status"] in ("queued", "running") and any(
+                    r["user_id"] == row["user_id"] and r["kind"] == row["kind"]
+                    and r["status"] in ("queued", "running") for r in rows
+                ):  # the partial unique index jobs_one_active_per_kind
+                    raise APIError({"message": "duplicate key value violates unique constraint",
+                                    "code": "23505", "details": None, "hint": None})
                 row.setdefault("id", str(uuid.uuid4()))
-                row.setdefault("created_at", self.db.now())
+                # jobs are judged against the real clock (staleness), so stamp them with it
+                row.setdefault("created_at", datetime.now(UTC).isoformat() if self.table == "jobs" else self.db.now())
                 rows.append(row)
                 made.append(copy.deepcopy(row))
             return _Result(made)

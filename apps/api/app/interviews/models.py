@@ -27,6 +27,11 @@ class StartInterviewRequest(BaseModel):
     jd_text: str = Field(min_length=10, max_length=20000)
 
 
+class SetupStartedOut(BaseModel):
+    job_id: str
+    interview_id: str
+
+
 class InterviewOut(BaseModel):
     id: str
     type: str
