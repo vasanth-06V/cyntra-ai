@@ -87,24 +87,6 @@ async def set_digest(resume_id: str, digest: str) -> None:
     await run(_q)
 
 
-async def match_resume_chunks(
-    resume_id: str, query_embedding: list[float], match_count: int = 5
-) -> list[dict]:
-    supabase = get_supabase()
-
-    def _q():
-        return supabase.rpc(
-            "match_resume_chunks",
-            {
-                "query_embedding": query_embedding,
-                "filter_resume_id": resume_id,
-                "match_count": match_count,
-            },
-        ).execute()
-
-    return (await run(_q)).data
-
-
 async def match_resume_chunks_multi(
     resume_id: str, embeddings: list[list[float]], terms: list[str], per_query: int = 1
 ) -> list[dict]:

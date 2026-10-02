@@ -108,10 +108,12 @@ async def test_claude_and_unknown_types_are_rejected_by_validation(client, keyed
 async def test_groq_interview_uses_groq_for_chat_and_gemini_for_embeddings(client, env):
     seed_key(env, USER_A, "gemini", "primary", "gem-a")
     seed_key(env, USER_A, "groq", "primary", "groq-a")
-    r, _ = await _start(client, env, provider="groq", type_="hr")
+    _seed_questions(env, 2, "coding")  # a type that needs questions, so setup embeds the JD
+    r, _ = await _start(client, env, provider="groq", type_="coding")
     assert r.status_code == 201
     assert env.groq.chat_calls and not env.gemini.chat_calls
-    assert env.gemini.embed_calls
+    assert env.gemini.embed_calls and env.gemini.embed_calls[0].api_key == "gem-a"  # embeddings stay on Gemini
+    assert env.gemini.embed_calls[0].kind == "query"
 
 
 async def test_setup_failure_marks_interview_aborted_and_returns_clean_error(client, keyed):

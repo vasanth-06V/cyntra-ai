@@ -6,6 +6,15 @@ export type ScoreRequest = {
   provider: ProviderName;
 };
 
+export type RequirementCoverage = {
+  term: string;
+  kind: "must" | "nice";
+  covered: boolean;
+  strength: number;
+  section: string | null;
+  evidence: string;
+};
+
 export type ScoreResponse = {
   composite_score: number;
   keyword_score: number;
@@ -14,4 +23,5 @@ export type ScoreResponse = {
   feedback: string;
   missing_must_have: string[];
   missing_nice_to_have: string[];
+  coverage?: RequirementCoverage[];
 };

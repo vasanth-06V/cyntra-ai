@@ -31,6 +31,12 @@ _cache = TTLCache(ttl_seconds=3600)
 _extract_json = extract_json  # kept importable for existing callers/tests
 
 
+def cached_requirements(user_id: str, jd_text: str) -> dict | None:
+    """The requirements already extracted for this exact JD (e.g. by an earlier
+    ATS check), if still cached -- costs nothing, unlike extracting again."""
+    return _cache.get((user_id, hashlib.sha256(jd_text.encode()).hexdigest()))
+
+
 async def extract_requirements(user_id: str, provider: str, jd_text: str) -> dict:
     # Re-scoring the same JD against another resume costs no LLM call. Keyed by
     # user too, so one user's JD is never served to another.

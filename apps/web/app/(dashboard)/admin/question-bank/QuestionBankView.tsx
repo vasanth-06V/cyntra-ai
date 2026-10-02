@@ -22,6 +22,8 @@ export function QuestionBankView() {
   const [type, setType] = useState<InterviewType>("coding");
   const [questionText, setQuestionText] = useState("");
   const [tagsText, setTagsText] = useState("");
+  const [topicText, setTopicText] = useState("");
+  const [difficulty, setDifficulty] = useState<string>("");
   const [testCasesText, setTestCasesText] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -55,6 +57,8 @@ export function QuestionBankView() {
     setEditingId(null);
     setQuestionText("");
     setTagsText("");
+    setTopicText("");
+    setDifficulty("");
     setTestCasesText("");
     setFormError(null);
   }
@@ -64,6 +68,8 @@ export function QuestionBankView() {
     setType(q.type);
     setQuestionText(q.question);
     setTagsText((q.tags ?? []).join(", "));
+    setTopicText(q.topic ?? "");
+    setDifficulty(q.difficulty ? String(q.difficulty) : "");
     setTestCasesText(q.test_cases ? JSON.stringify(q.test_cases, null, 2) : "");
   }
 
@@ -95,6 +101,8 @@ export function QuestionBankView() {
           question: questionText,
           test_cases: testCases,
           tags,
+          topic: topicText.trim() || undefined,
+          difficulty: difficulty ? Number(difficulty) : undefined,
         });
       } else {
         await apiClient.post("/interviews/question-bank", {
@@ -102,6 +110,8 @@ export function QuestionBankView() {
           question: questionText,
           test_cases: testCases,
           tags,
+          topic: topicText.trim() || undefined,
+          difficulty: difficulty ? Number(difficulty) : undefined,
         });
       }
       resetForm();
@@ -170,6 +180,30 @@ export function QuestionBankView() {
             className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
 
+          <div className="flex gap-3">
+            <input
+              value={topicText}
+              onChange={(e) => setTopicText(e.target.value)}
+              placeholder="Topic, e.g. arrays, caching, conflict (optional)"
+              aria-label="Topic"
+              maxLength={60}
+              className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              aria-label="Difficulty"
+              className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">Difficulty</option>
+              {[1, 2, 3, 4, 5].map((d) => (
+                <option key={d} value={d}>
+                  {d} {d === 1 ? "(easy)" : d === 5 ? "(hard)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <textarea
             value={testCasesText}
             onChange={(e) => setTestCasesText(e.target.value)}
@@ -229,6 +263,13 @@ export function QuestionBankView() {
                     {INTERVIEW_TYPE_LABELS[q.type]}
                   </span>
                   <p className="text-sm">{q.question}</p>
+                  {(q.topic || q.difficulty) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {[q.topic, q.difficulty ? `difficulty ${q.difficulty}/5` : null]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                   {q.tags && q.tags.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {q.tags.join(", ")}

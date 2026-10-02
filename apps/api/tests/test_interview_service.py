@@ -33,11 +33,11 @@ def _common_mocks(monkeypatch):
 
     monkeypatch.setattr(service.gateway, "embed", fake_embed)
     monkeypatch.setattr(
-        service, "match_question_bank", lambda *a, **kw: _async_value([{"id": "q-1"}, {"id": "q-2"}])
+        service, "_select_questions", lambda *a, **kw: _async_value(["q-1", "q-2"])
     )
     monkeypatch.setattr(
         service,
-        "match_resume_chunks",
+        "match_resume_chunks_multi",
         lambda *a, **kw: _async_value([{"content": "Relevant resume section."}]),
     )
     monkeypatch.setattr(

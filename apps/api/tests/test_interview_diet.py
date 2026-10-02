@@ -40,7 +40,7 @@ def start_mocks(monkeypatch):
     )
     monkeypatch.setattr(service, "get_key_row", lambda *a: _value({"id": "k"}))
     monkeypatch.setattr(service, "_create_interview_row", lambda *a: _value("i-1"))
-    monkeypatch.setattr(service, "match_question_bank", lambda *a, **k: _value([]))
+    monkeypatch.setattr(service, "_select_questions", lambda *a, **k: _value([]))
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _value({"id": "i-1"}))
 
     async def fake_embed(user_id, texts, kind="doc"):
@@ -60,7 +60,7 @@ def start_mocks(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_setup_is_one_embed_and_one_llm_call_and_stores_brief(monkeypatch, start_mocks):
+async def test_setup_is_one_llm_call_and_no_embedding_when_no_questions_are_needed(monkeypatch, start_mocks):
     async def fake_complete(user_id, provider, messages, options=None):
         start_mocks["complete"].append((messages, options))
         return completion('{"brief": "Backend role, senior, Python.", "opening": "Hi! Tell me about yourself."}')
@@ -69,7 +69,7 @@ async def test_setup_is_one_embed_and_one_llm_call_and_stores_brief(monkeypatch,
 
     await service.start_interview("u", "behavioral", "gemini", "r", "JD " * 5000)
 
-    assert start_mocks["embed"] == 1
+    assert start_mocks["embed"] == 0  # a behavioral interview with a resume digest needs no embedding
     assert len(start_mocks["complete"]) == 1
     messages, options = start_mocks["complete"][0]
     assert options.json_mode is True
@@ -254,3 +254,72 @@ async def test_resume_digest_returns_text(monkeypatch):
     monkeypatch.setattr(rag_service.gateway, "complete", ok)
     assert await rag_service._make_digest("u", "resume text") == "Senior Python dev."
     assert resume_prompts.DIGEST_PROMPT.split("{")[0] in seen[0]
+
+
+@pytest.mark.asyncio
+async def test_a_coding_interview_embeds_the_jd_once_as_a_query_and_selects_questions(monkeypatch, start_mocks):
+    seen = {}
+
+    async def fake_embed(user_id, texts, kind="doc"):
+        start_mocks["embed"] += 1
+        seen["texts"], seen["kind"] = list(texts), kind
+        return [[0.1] for _ in texts]
+
+    async def fake_select(user_id, interview_type, vector, count):
+        seen["select"] = (interview_type, vector, count)
+        return ["q-1", "q-2"]
+
+    async def fake_complete(user_id, provider, messages, options=None):
+        return completion('{"brief": "b", "opening": "Hello!"}')
+
+    monkeypatch.setattr(service.gateway, "embed", fake_embed)
+    monkeypatch.setattr(service, "_select_questions", fake_select)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete)
+
+    await service.start_interview("u", "coding", "gemini", "r", "Backend engineer. Great benefits and snacks.")
+
+    assert start_mocks["embed"] == 1 and seen["kind"] == "query"
+    assert seen["select"] == ("coding", [0.1], 2)
+    assert start_mocks["updates"]["i-1"]["selected_question_ids"] == ["q-1", "q-2"]
+
+
+def test_the_question_query_prefers_cached_requirements_over_the_raw_posting(monkeypatch):
+    monkeypatch.setattr(
+        service, "cached_requirements",
+        lambda user_id, jd: {"title": "Backend Engineer", "must_have": ["Python", "SQL"], "nice_to_have": ["Redis"]},
+    )
+    assert service._jd_query("u", "long posting " * 500) == "Backend Engineer. Requires: Python, SQL, Redis"
+
+    monkeypatch.setattr(service, "cached_requirements", lambda user_id, jd: None)
+    assert len(service._jd_query("u", "long posting " * 500)) < 1700  # falls back to a truncated JD
+
+
+@pytest.mark.asyncio
+async def test_without_a_digest_the_resume_context_comes_from_the_best_chunks_in_one_call(monkeypatch, start_mocks):
+    calls = []
+
+    async def multi(resume_id, embeddings, terms, per_query=1):
+        calls.append((resume_id, len(embeddings), per_query))
+        return [{"content": "Built Python services."}, {"content": "Led a team."}]
+
+    monkeypatch.setattr(
+        service, "_get_owned_processed_resume",
+        lambda *a: _value({"id": "r", "parsed_text": "full text", "digest": None}),
+    )
+    monkeypatch.setattr(service, "match_resume_chunks_multi", multi)
+
+    async def fake_embed(user_id, texts, kind="doc"):
+        start_mocks["embed"] += 1
+        return [[0.1] for _ in texts]
+
+    async def fake_complete(user_id, provider, messages, options=None):
+        start_mocks["complete"].append(messages)
+        return completion('{"brief": "b", "opening": "Hello!"}')
+
+    monkeypatch.setattr(service.gateway, "embed", fake_embed)
+    monkeypatch.setattr(service.gateway, "complete_full", fake_complete)
+
+    await service.start_interview("u", "behavioral", "gemini", "r", "A job description here.")
+
+    assert start_mocks["embed"] == 1 and calls == [("r", 1, 3)]
+    assert "Built Python services." in start_mocks["complete"][0][0].content

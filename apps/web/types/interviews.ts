@@ -58,6 +58,8 @@ export type Question = {
   question: string;
   test_cases: QuestionTestCase[] | null;
   tags: string[] | null;
+  difficulty: number | null;
+  topic: string | null;
   created_by: string | null;
   created_at: string;
 };

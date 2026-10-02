@@ -29,6 +29,22 @@ async def has_permission(user_id: str, permission: str) -> bool:
     return bool(result and result.data)
 
 
+async def get_question(question_id: str) -> dict | None:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("question_bank")
+            .select("id, type, question, tags, topic, difficulty")
+            .eq("id", question_id)
+            .maybe_single()
+            .execute()
+        )
+
+    result = await run(_q)
+    return result.data if result and result.data else None
+
+
 async def insert_question(row: dict) -> dict:
     supabase = get_supabase()
 
@@ -43,7 +59,7 @@ async def list_questions(interview_type: str | None, limit: int = 200, offset: i
 
     def _q():
         q = supabase.table("question_bank").select(
-            "id, type, question, test_cases, tags, created_by, created_at"
+            "id, type, question, test_cases, tags, difficulty, topic, created_by, created_at"
         )
         if interview_type:
             q = q.eq("type", interview_type)
@@ -69,24 +85,6 @@ async def delete_question(question_id: str) -> None:
         return supabase.table("question_bank").delete().eq("id", question_id).execute()
 
     await run(_q)
-
-
-async def match_question_bank(
-    interview_type: str, query_embedding: list[float], match_count: int = 2
-) -> list[dict]:
-    supabase = get_supabase()
-
-    def _q():
-        return supabase.rpc(
-            "match_question_bank",
-            {
-                "query_embedding": query_embedding,
-                "filter_type": interview_type,
-                "match_count": match_count,
-            },
-        ).execute()
-
-    return (await run(_q)).data
 
 
 async def match_question_bank_v2(

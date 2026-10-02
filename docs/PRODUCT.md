@@ -70,7 +70,7 @@ A **single-tenant AI platform** with three services under one account system, ru
 | Keyword score (whole-word, synonyms), semantic score (embeddings), formatting score (heuristics) → weighted composite 0–100 (40/40/20), **all sub-scores shown** | 🟡 |
 | Written actionable feedback (LLM) | 🟡 |
 | **No history stored** (decision) | ✅ by design |
-| Calibrated semantic scoring, evidence per requirement | 🔜 (RAG v2) |
+| Calibrated semantic scoring, evidence per requirement | ✅ built (constants await the owner-run live calibration) |
 
 ### 2.6 Interviewing Agent
 | Feature | Status |
@@ -123,7 +123,7 @@ Browser ── Next.js 16 (Vercel) ──────────────►
 | Storage | Cloudflare R2 (10 GB free, zero egress) — *not yet configured* |
 | Code execution (planned) | Judge0 (decision pending — see §8) |
 | Hosting (planned) | Vercel (web) + Render free (API) + Supabase free |
-| Tests | pytest: 417 passing + 2 strict known-bug markers; tsc / eslint / `next build` clean |
+| Tests | pytest: 504 passing + 2 strict known-bug markers; tsc / eslint / `next build` clean |
 
 **Trust model:** Next.js owns light CRUD (resume metadata/upload, auth). FastAPI owns anything touching an LLM, embeddings or (later) voice. The browser calls FastAPI directly with the Supabase JWT; FastAPI verifies it and uses the **service role**, so ownership is enforced in code (every query is scoped by `user_id`).
 
@@ -228,11 +228,12 @@ docs/      IMPLEMENTATION.md · PROJECT_DOCUMENTARY.md · PILLARS_PLAN.md · PRO
 | 10-02 | **Self-audit** | Fixed raw-JSON greeting, early question reveal, summary failing a turn, turn-order; blocked-reply 422; eslint errors; gateway docs |
 | 10-02 | **Phase 1–6 audit by 3 agents** | 132 integration tests added; fixes across auth (forgery hole), keys, ATS, interviews, RAG, frontend; migration 0019 written |
 | 10-02 | **Pillars plan (RAG/LLM/backend)** + risk research | `docs/PILLARS_PLAN.md` rev 2 — approved |
+| 10-02 | **M3 RAG v2** | Eval harness; structure-aware chunker; migration 0020 (labelled chunks, versions, multi-term retrieval, atomic re-ingest, question-bank lockdown); calibrated keyword-aware ATS coverage with evidence; diverse non-repeating question selection; query-embedding cache; owner-run calibration and re-embed scripts |
 | 10-02 | **M2 LLM hardening** | Gemini over REST; typed provider errors; per-key limiter + cooldowns; deadlines; finish reasons; structured output; prompt-injection standard; background summaries/digests; Pacific-day usage (migration 0023); owner-run smoke script |
 | 10-02 | **M1 platform core** | Error envelope + request ids + JSON logs; throttles; `app/db` layer with an enforced architecture test; pagination; frontend retry/"waking server" handling |
 | 10-02 | **M0 safety net** | 0019 applied live; startup config validation; CORS/docs from env; CI workflow; Claude IDs fixed; `docs/FACTS.md`; 4 MB upload limit |
 
-**Quality gates today:** 417 backend tests pass (+2 deliberate known-bug markers), `tsc`, `eslint`, `next build` clean. Nothing about R2/resume upload, ATS, interviews, Claude, Groq or batched embeddings has run against real services yet.
+**Quality gates today:** 504 backend tests pass (+2 deliberate known-bug markers), `tsc`, `eslint`, `next build` clean. Nothing about R2/resume upload, ATS, interviews, Claude, Groq or batched embeddings has run against real services yet.
 
 ---
 
@@ -256,7 +257,7 @@ Strengthen the three pillars (**RAG pipeline, LLM pipeline, backend architecture
 | **M0 Safety net** ✅ done 2026-10-02 | 0019 applied; startup config validation + CORS/docs from env; CI workflow; Claude model IDs fixed; `docs/FACTS.md`; interim 4 MB upload limit | — |
 | **M1 Platform core** ✅ done 2026-10-02 | Unified error codes + request ids + JSON logs; db layer (+ architecture test); "waking the server" UI; per-user throttles; pagination | everything |
 | **M2 LLM hardening** ✅ done 2026-10-02 | Thinking control, timeouts + deadline, finish-reason handling, error taxonomy, streaming-disconnect safety, structured output + repair, prompt-injection defense, background summaries, per-key limiter, Pacific-day usage, adapter fixture tests + user-run smoke script | Phases 7, 8, 9 |
-| **M3 RAG v2** | Eval harness first; embedding task types + normalization + versioning (re-embed is free: tables empty); chunker v2; one-call multi-term retrieval; calibrated ATS; question selection with diversity/difficulty/exclusion; **question-bank lockdown** | Phase 7 |
+| **M3 RAG v2** ✅ done 2026-10-02 | Eval harness first; embedding task types + normalization + versioning (re-embed is free: tables empty); chunker v2; one-call multi-term retrieval; calibrated ATS; question selection with diversity/difficulty/exclusion; **question-bank lockdown** | Phase 7 |
 | **M4 Jobs & atomicity** | `jobs` table + runner + polling; atomic RPCs (turn append, chat exchange, chunk replace); direct-to-R2 upload; real `setting_up` job with progress | Phases 7–9 |
 
 ### 8.2 Remaining product phases
@@ -281,7 +282,7 @@ Render free: spins down after 15 min idle, ~1 min cold start, 750 instance-hours
 
 ```bash
 # API (from apps/api; venv at apps/api/venv)
-source venv/Scripts/activate && python -m pytest -q          # 417 passed, 1 skipped, 2 xfailed
+source venv/Scripts/activate && python -m pytest -q          # 504 passed, 1 skipped, 2 xfailed
 # Web (from apps/web)
 npx tsc --noEmit && npx eslint . && npx next build
 ```

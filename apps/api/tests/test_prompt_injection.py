@@ -222,7 +222,7 @@ async def test_the_stored_brief_is_sanitized_and_the_jd_and_resume_are_wrapped(m
     monkeypatch.setattr(service, "_get_owned_processed_resume", lambda *a: _value({"id": "r", "parsed_text": "t", "digest": f"Digest. {attack}"}))
     monkeypatch.setattr(service, "get_key_row", lambda *a: _value({"id": "k"}))
     monkeypatch.setattr(service, "_create_interview_row", lambda *a: _value("i-1"))
-    monkeypatch.setattr(service, "match_question_bank", lambda *a, **k: _value([]))
+    monkeypatch.setattr(service, "_select_questions", lambda *a, **k: _value([]))
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _value({"id": "i-1"}))
     monkeypatch.setattr(service, "_update_interview", update)
     monkeypatch.setattr(service, "_append_transcript", lambda *a: _value(None))

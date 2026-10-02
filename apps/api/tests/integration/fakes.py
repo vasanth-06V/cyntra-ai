@@ -42,7 +42,7 @@ DEFAULTS: dict[str, dict] = {
         "brief": None, "summarized_through_turn": 0, "selected_question_ids": [],
         "current_question_index": 0, "provider": "gemini",
     },
-    "question_bank": {"test_cases": None, "tags": None, "created_by": None},
+    "question_bank": {"test_cases": None, "tags": None, "created_by": None, "difficulty": None, "topic": None, "embed_version": "legacy"},
     "notifications": {"is_read": False},
 }
 
@@ -271,23 +271,6 @@ class FakeSupabase:
 
     def run_rpc(self, name, params):
         self.rpc_calls.append((name, params))
-        if name == "match_resume_chunks":
-            hits = [r for r in self.tables.get("resume_chunks", [])
-                    if r["resume_id"] == params["filter_resume_id"]]
-            hits.sort(key=lambda r: r["chunk_index"])
-            return [
-                {"id": r["id"], "content": r["content"], "chunk_index": r["chunk_index"],
-                 "similarity": self.similarity}
-                for r in hits[: params["match_count"]]
-            ]
-        if name == "match_question_bank":
-            hits = [r for r in self.tables.get("question_bank", [])
-                    if r["type"] == params["filter_type"]]
-            return [
-                {"id": r["id"], "question": r["question"], "test_cases": r.get("test_cases"),
-                 "tags": r.get("tags"), "similarity": 0.9}
-                for r in hits[: params["match_count"]]
-            ]
         if name == "replace_resume_chunks":
             # Atomic by construction: validate and fail BEFORE touching anything.
             resume = next(

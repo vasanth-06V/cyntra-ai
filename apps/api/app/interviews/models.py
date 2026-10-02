@@ -63,12 +63,16 @@ class QuestionIn(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     test_cases: list | None = None
     tags: list[str] | None = None
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+    topic: str | None = Field(default=None, max_length=60)
 
 
 class QuestionUpdateIn(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=4000)
     test_cases: list | None = None
     tags: list[str] | None = None
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+    topic: str | None = Field(default=None, max_length=60)
 
 
 class QuestionOut(BaseModel):
@@ -77,5 +81,7 @@ class QuestionOut(BaseModel):
     question: str
     test_cases: list | None
     tags: list[str] | None
+    difficulty: int | None = None
+    topic: str | None = None
     created_by: str | None
     created_at: datetime

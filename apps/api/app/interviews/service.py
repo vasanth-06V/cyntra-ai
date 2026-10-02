@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 from fastapi import status
 
 from app.core import background
+from app.ats.requirements_extractor import cached_requirements
 from app.core.errors import AppError
 from app.db import interviews as interviews_repo
 from app.db import resumes as resumes_repo
 from app.interviews import summarizer
 from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase_for_elapsed
+from app.interviews.question_selection import select_questions
 from app.interviews.types import get_config
 from app.db.keys import get_key_row
 from app.llm import gateway
@@ -36,7 +38,7 @@ from app.llm.untrusted import (
     wrap,
 )
 from app.providers.base import Message, MessageRole
-from app.rag.retrieval import match_question_bank, match_resume_chunks
+from app.rag.retrieval import match_question_bank_v2, match_resume_chunks_multi
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ _TURN_OPTIONS = LLMOptions(
 
 _JD_SETUP_TOKENS = 1200
 _JD_FALLBACK_TOKENS = 300
+_JD_QUERY_TOKENS = 400
 _BRIEF_MAX_TOKENS = 300
 _RESUME_FALLBACK_TOKENS = 400
 _TURN_TOKEN_CAP = 120
@@ -112,6 +115,38 @@ def _elapsed_minutes(interview: dict) -> float:
     return (datetime.now(UTC) - started_at).total_seconds() / 60
 
 
+def _jd_query(user_id: str, jd_text: str) -> str:
+    """What the JD is searched as. The extracted requirements (free if an ATS
+    check already ran on this JD) beat the raw posting, which is mostly
+    boilerplate -- benefits, EEO text, company blurbs -- that drags questions
+    toward the wrong topics."""
+    requirements = cached_requirements(user_id, jd_text)
+    if requirements:
+        skills = ", ".join((requirements["must_have"] + requirements["nice_to_have"])[:12])
+        if requirements.get("title") or skills:
+            return f"{requirements.get('title', '')}. Requires: {skills}".strip()
+    return truncate(jd_text, _JD_QUERY_TOKENS)
+
+
+async def _select_questions(
+    user_id: str, interview_type: str, query_vector: list[float], count: int
+) -> list[str]:
+    """Relevant, diverse, and fresh for this user (see question_selection)."""
+    asked = await interviews_repo.asked_question_ids(user_id)
+    candidates = await match_question_bank_v2(
+        query_vector, interview_type, asked, max(12, count * 4)
+    )
+    chosen = select_questions(candidates, count)
+
+    if len(chosen) < count and asked:
+        # The user has seen most of the bank: allow repeats rather than a
+        # shorter interview, preferring whatever they have not seen.
+        picked = [c["id"] for c in chosen]
+        more = await match_question_bank_v2(query_vector, interview_type, picked, max(12, count * 4))
+        chosen += select_questions(more, count - len(chosen))
+    return [c["id"] for c in chosen]
+
+
 async def start_interview(
     user_id: str, interview_type: str, provider: str, resume_id: str, jd_text: str
 ) -> dict:
@@ -125,21 +160,26 @@ async def start_interview(
     interview_id = await _create_interview_row(user_id, interview_type, jd_text, resume_id, provider)
 
     try:
-        jd_embedding = (await gateway.embed(user_id, [jd_text], kind="query"))[0]
-
-        selected_question_ids: list[str] = []
-        if config.question_count > 0:
-            matches = await match_question_bank(
-                interview_type, jd_embedding, match_count=config.question_count
-            )
-            selected_question_ids = [m["id"] for m in matches]
-
         resume_context = resume.get("digest")
+
+        # Embedding is only needed to pick questions or, with no digest yet, to
+        # find the resume's most relevant chunks. A behavioral interview with a
+        # digest on file spends no embedding request at all.
+        selected_question_ids: list[str] = []
+        query_vector: list[float] | None = None
+        if config.question_count > 0 or not resume_context:
+            query = _jd_query(user_id, jd_text)
+            query_vector = (await gateway.embed(user_id, [query], kind="query"))[0]
+
+        if config.question_count > 0:
+            selected_question_ids = await _select_questions(
+                user_id, interview_type, query_vector, config.question_count
+            )
+
         if not resume_context:
-            relevant_chunks = await match_resume_chunks(resume_id, jd_embedding, match_count=3)
+            rows = await match_resume_chunks_multi(resume_id, [query_vector], [""], per_query=3)
             resume_context = truncate(
-                "\n\n".join(c["content"] for c in relevant_chunks)
-                or (resume["parsed_text"] or ""),
+                "\n\n".join(r["content"] for r in rows) or (resume["parsed_text"] or ""),
                 _RESUME_FALLBACK_TOKENS,
             )
 

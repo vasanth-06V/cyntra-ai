@@ -23,6 +23,7 @@ streaming -- that would repeat text the user has already seen.
 
 import asyncio
 import dataclasses
+import hashlib
 import logging
 import random
 import time
@@ -42,8 +43,9 @@ from app.llm.completion import Completion
 from app.llm.json_utils import extract_json
 from app.llm.keystate import cooldowns, key_hash, seconds_until_pacific_midnight
 from app.llm.limiter import limiter
-from app.llm.models import FALLBACKS, timeout_for
+from app.llm.models import EMBEDDING_VERSION, FALLBACKS, timeout_for
 from app.llm.options import LLMOptions, Usage
+from app.llm.ttl_cache import TTLCache
 from app.providers.base import (
     Message,
     MessageRole,
@@ -606,11 +608,45 @@ async def stream(
             )
 
 
+# Query vectors are cheap to remember and the same text recurs (an ATS check and
+# the interview that follows use the same JD requirements). Only "query" texts
+# are cached -- documents are stored in the database, not looked up again. The
+# cache holds vectors only, keyed by a hash that includes the embedding
+# version, so a model change can never serve a stale vector.
+_query_cache = TTLCache(ttl_seconds=3600, max_items=2000)
+
+
+def _query_key(text: str) -> str:
+    return hashlib.sha256(f"{EMBEDDING_VERSION}|{text}".encode()).hexdigest()
+
+
 async def embed(user_id: str, texts: list[str], kind: str = "doc") -> list[list[float]]:
     """Batched embeddings, always via the user's Gemini key (the only
     provider with an embeddings API) -- with the same cooldown/limiter/backup
     handling as everything else. kind="doc" for text that will be searched,
-    "query" for text used to search with."""
+    "query" for text used to search with (those are cached for an hour)."""
+    results: list[list[float] | None] = [None] * len(texts)
+    missing: list[int] = list(range(len(texts)))
+    if kind == "query":
+        missing = []
+        for i, text in enumerate(texts):
+            cached = _query_cache.get(_query_key(text))
+            if cached is not None:
+                results[i] = cached
+            else:
+                missing.append(i)
+        if not missing:
+            return results  # type: ignore[return-value]
+
+    fresh = await _embed_uncached(user_id, [texts[i] for i in missing], kind)
+    for i, vector in zip(missing, fresh):
+        results[i] = vector
+        if kind == "query":
+            _query_cache.set(_query_key(texts[i]), vector)
+    return results  # type: ignore[return-value]
+
+
+async def _embed_uncached(user_id: str, texts: list[str], kind: str) -> list[list[float]]:
     options = LLMOptions(task="embed", feature="embed")
     usage = Usage()
     trace = _new_trace("gemini", options)

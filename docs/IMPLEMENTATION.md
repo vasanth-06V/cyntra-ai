@@ -210,7 +210,9 @@ create table resume_chunks (
   resume_id uuid references resumes(id) on delete cascade,
   chunk_index int not null,
   content text not null,
-  embedding vector(768),                 -- Gemini text-embedding-004 dimension
+  embedding vector(768),                 -- gemini-embedding-001 @768, L2-normalized
+  -- (M3 added: section text, embed_version text, content_tsv tsvector generated; resumes gained content_hash, embed_version;
+  --  question_bank gained difficulty, topic, embed_version -- see migrations 0020 and 0024)
   created_at timestamptz default now()
 );
 

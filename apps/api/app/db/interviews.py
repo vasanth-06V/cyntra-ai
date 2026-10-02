@@ -155,6 +155,28 @@ async def turns_since(interview_id: str, from_turn: int) -> list[dict]:
     return (await run(_q)).data or []
 
 
+async def asked_question_ids(user_id: str, limit: int = 100) -> list[str]:
+    """Question ids from the user's recent interviews, so a new interview can
+    avoid repeating them."""
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("interviews")
+            .select("selected_question_ids")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+    seen: dict[str, None] = {}
+    for row in (await run(_q)).data or []:
+        for qid in row.get("selected_question_ids") or []:
+            seen[qid] = None
+    return list(seen)
+
+
 async def question_text(question_id: str) -> str | None:
     supabase = get_supabase()
 
