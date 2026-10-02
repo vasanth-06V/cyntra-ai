@@ -35,21 +35,47 @@ async def require_processed_resume(user_id: str, resume_id: str, columns: str) -
     return row
 
 
-async def replace_chunks_and_finish(
-    resume_id: str, chunks: list[dict], parsed_text: str, digest: str | None
-) -> None:
-    """Replaces the resume's chunks, then marks it processed -- last, so a
-    failure partway leaves it unprocessed (retryable), not processed-but-empty."""
+async def replace_chunks(
+    user_id: str,
+    resume_id: str,
+    parsed_text: str,
+    content_hash: str,
+    embed_version: str,
+    chunks: list[dict],
+) -> int:
+    """Replaces the resume's chunks and marks it processed in ONE database
+    transaction (rpc replace_resume_chunks), under a row lock: a failure leaves
+    the previous state intact and two concurrent runs cannot interleave."""
     supabase = get_supabase()
 
     def _q():
-        supabase.table("resume_chunks").delete().eq("resume_id", resume_id).execute()
-        supabase.table("resume_chunks").insert(chunks).execute()
-        supabase.table("resumes").update({"parsed_text": parsed_text, "digest": digest}).eq(
-            "id", resume_id
+        return supabase.rpc(
+            "replace_resume_chunks",
+            {
+                "p_resume_id": resume_id,
+                "p_user_id": user_id,
+                "p_text": parsed_text,
+                "p_content_hash": content_hash,
+                "p_embed_version": embed_version,
+                "p_chunks": chunks,
+            },
         ).execute()
 
-    await run(_q)
+    return int((await run(_q)).data or 0)
+
+
+async def chunk_count(resume_id: str) -> int:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("resume_chunks")
+            .select("id", count="exact")
+            .eq("resume_id", resume_id)
+            .execute()
+        )
+
+    return (await run(_q)).count or 0
 
 
 async def set_digest(resume_id: str, digest: str) -> None:
@@ -77,3 +103,26 @@ async def match_resume_chunks(
         ).execute()
 
     return (await run(_q)).data
+
+
+async def match_resume_chunks_multi(
+    resume_id: str, embeddings: list[list[float]], terms: list[str], per_query: int = 1
+) -> list[dict]:
+    """The best chunk(s) for every requirement in ONE call. Each row says which
+    requirement it answers (q_idx), how similar the chunk is, whether the
+    chunk itself contains the term (kw_hit) and whether any chunk of the
+    resume does (kw_any)."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.rpc(
+            "match_resume_chunks_multi",
+            {
+                "filter_resume_id": resume_id,
+                "query_embeddings": embeddings,
+                "query_terms": terms,
+                "per_query": per_query,
+            },
+        ).execute()
+
+    return (await run(_q)).data or []

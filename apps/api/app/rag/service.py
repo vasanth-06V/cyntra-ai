@@ -1,22 +1,23 @@
 import asyncio
+import hashlib
 import logging
 
 from fastapi import HTTPException, status
 
 from app.core import background
 from app.core.errors import AppError
-
 from app.core.storage import download_bytes
 from app.db import resumes as resumes_repo
 from app.db.keys import get_key_row
-from app.rag.chunking import chunk_text
 from app.llm import gateway
 from app.llm.budget import truncate
+from app.llm.models import EMBEDDING_VERSION
 from app.llm.options import LLMOptions
 from app.llm.prompts.resume import DIGEST_PROMPT
 from app.llm.untrusted import NOTICE, new_boundary, sanitize_derived, wrap
 from app.providers.base import Message, MessageRole
 from app.rag.parsing import extract_text
+from app.rag.resume_chunker import CHUNKER_VERSION, chunk_resume
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,13 @@ _DIGEST_INPUT_TOKENS = 1500
 _DIGEST_MAX_TOKENS = 300
 _MAX_FILE_BYTES = 5 * 1024 * 1024
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request
+
+
+def content_hash(text: str) -> str:
+    """Identifies "this exact text, chunked and embedded this way". If it is
+    unchanged, re-processing the resume would spend embedding quota for
+    nothing."""
+    return hashlib.sha256(f"{CHUNKER_VERSION}|{EMBEDDING_VERSION}|{text}".encode()).hexdigest()
 
 
 async def _make_digest(user_id: str, text: str) -> str | None:
@@ -60,13 +68,16 @@ async def _store_digest(user_id: str, resume_id: str, text: str) -> None:
 
 
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
-    return await resumes_repo.require_resume(user_id, resume_id, "id, file_key")
+    return await resumes_repo.require_resume(
+        user_id, resume_id, "id, file_key, parsed_text, content_hash, digest"
+    )
 
 
 async def process_resume(user_id: str, resume_id: str) -> int:
-    """Downloads the resume from R2, extracts text, chunks it, embeds each
-    chunk (always via Gemini -- see rag/embeddings.py), and stores the
-    result. Returns the number of chunks created."""
+    """Downloads the resume from R2, extracts text, chunks it into labelled
+    sections, embeds the chunks (always via Gemini -- see rag/embeddings.py)
+    and stores them atomically. Returns the number of chunks. Re-processing an
+    unchanged resume costs no embedding quota."""
     resume = await _get_owned_resume(user_id, resume_id)
 
     gemini_key = await get_key_row(user_id, "gemini", "primary")
@@ -95,21 +106,34 @@ async def process_resume(user_id: str, resume_id: str) -> int:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Couldn't read this file -- is it a valid PDF or DOCX?",
         ) from exc
-    chunks = chunk_text(text)[:_MAX_CHUNKS]
 
+    digest_hash = content_hash(text)
+    if resume.get("content_hash") == digest_hash and resume.get("parsed_text"):
+        existing = await resumes_repo.chunk_count(resume_id)
+        if existing:
+            return existing  # identical content already chunked and embedded this way
+
+    chunks = chunk_resume(text)
     if not chunks:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No extractable text found in this file",
         )
+    if len(chunks) > _MAX_CHUNKS:
+        logger.warning("Resume has %d chunks; keeping the first %d", len(chunks), _MAX_CHUNKS)
+        chunks = chunks[:_MAX_CHUNKS]
 
-    embeddings = await gateway.embed(user_id, chunks)
+    # Documents are embedded with their section header ("Experience | role")
+    # so each chunk carries its own context.
+    embeddings = await gateway.embed(user_id, [c.content for c in chunks], kind="doc")
 
     rows = [
-        {"resume_id": resume_id, "chunk_index": i, "content": chunk, "embedding": embedding}
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+        {"chunk_index": i, "content": c.content, "section": c.section, "embedding": embedding}
+        for i, (c, embedding) in enumerate(zip(chunks, embeddings))
     ]
-    await resumes_repo.replace_chunks_and_finish(resume_id, rows, text, None)
+    count = await resumes_repo.replace_chunks(
+        user_id, resume_id, text, digest_hash, EMBEDDING_VERSION, rows
+    )
 
     # The digest only speeds up later interviews (they fall back to the chunks
     # without it), so it is made after the resume is already usable.
@@ -118,4 +142,4 @@ async def process_resume(user_id: str, resume_id: str) -> int:
         name=f"digest:{resume_id}",
         key=f"digest:{resume_id}",
     )
-    return len(chunks)
+    return count

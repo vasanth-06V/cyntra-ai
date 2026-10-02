@@ -35,7 +35,7 @@ DEFAULTS: dict[str, dict] = {
     "provider_keys": {"is_valid": False, "last_validated_at": None},
     "conversations": {"title": None},
     "chat_messages": {"provider": None},
-    "resumes": {"parsed_text": None, "digest": None},
+    "resumes": {"parsed_text": None, "digest": None, "content_hash": None, "embed_version": None},
     "interviews": {
         "phase": None, "started_at": None, "ends_at": None, "running_summary": None,
         "brief": None, "summarized_through_turn": 0, "selected_question_ids": [],
@@ -55,8 +55,9 @@ def _is_uuid(value) -> bool:
 
 
 class _Result:
-    def __init__(self, data):
+    def __init__(self, data, count=None):
         self.data = data
+        self.count = count
 
 
 class _Query:
@@ -74,8 +75,8 @@ class _Query:
         self._single = False
 
     # --- builder ---
-    def select(self, cols="*", **_):
-        self._op, self._cols = "select", cols
+    def select(self, cols="*", count=None, **_):
+        self._op, self._cols, self._count = "select", cols, count
         return self
 
     def insert(self, payload, **_):
@@ -168,6 +169,7 @@ class _Query:
 
         if self._op == "select":
             snapshot = [r for r in rows if self._match(r)]
+            total = len(snapshot)
             if self._order:
                 col, desc = self._order
                 snapshot.sort(key=lambda r: r.get(col), reverse=desc)
@@ -185,7 +187,7 @@ class _Query:
                                     "code": "PGRST116", "details": "The result contains 2 rows",
                                     "hint": None})
                 return _Result(out[0]) if out else None
-            return _Result(out)
+            return _Result(out, count=total if getattr(self, "_count", None) else None)
 
         if self._op == "insert":
             payloads = self._payload if isinstance(self._payload, list) else [self._payload]
@@ -284,6 +286,59 @@ class FakeSupabase:
                 {"id": r["id"], "question": r["question"], "test_cases": r.get("test_cases"),
                  "tags": r.get("tags"), "similarity": 0.9}
                 for r in hits[: params["match_count"]]
+            ]
+        if name == "replace_resume_chunks":
+            # Atomic by construction: validate and fail BEFORE touching anything.
+            resume = next(
+                (r for r in self.tables.get("resumes", [])
+                 if r["id"] == params["p_resume_id"] and r["user_id"] == params["p_user_id"]),
+                None,
+            )
+            if resume is None:
+                raise APIError({"message": "resume not found", "code": "P0002", "details": None, "hint": None})
+            hook = self.fail_on.get(("resume_chunks", "insert"))
+            if hook:
+                raise hook
+            self.tables["resume_chunks"] = [
+                r for r in self.tables.get("resume_chunks", []) if r["resume_id"] != params["p_resume_id"]
+            ]
+            for c in params["p_chunks"]:
+                self.tables["resume_chunks"].append({
+                    "id": str(uuid.uuid4()), "resume_id": params["p_resume_id"],
+                    "chunk_index": c["chunk_index"], "content": c["content"], "section": c.get("section"),
+                    "embedding": c["embedding"], "embed_version": params["p_embed_version"],
+                    "created_at": self.now(),
+                })
+            resume.update(parsed_text=params["p_text"], content_hash=params["p_content_hash"],
+                          embed_version=params["p_embed_version"])
+            return len(params["p_chunks"])
+        if name == "match_resume_chunks_multi":
+            chunks = sorted(
+                (r for r in self.tables.get("resume_chunks", []) if r["resume_id"] == params["filter_resume_id"]),
+                key=lambda r: r["chunk_index"],
+            )
+            out = []
+            for i, term in enumerate(params["query_terms"]):
+                words = [w for w in term.lower().split() if w]
+                contains = lambda c: all(w in c["content"].lower() for w in words)  # noqa: E731
+                kw_any = any(contains(c) for c in chunks)
+                # best chunk: prefer one that mentions the term (a stand-in for similarity ordering)
+                ordered = sorted(chunks, key=lambda c: (not contains(c), c["chunk_index"]))
+                for c in ordered[: params.get("per_query", 1)]:
+                    out.append({
+                        "q_idx": i, "chunk_id": c["id"], "section": c.get("section"), "content": c["content"],
+                        "similarity": self.similarity, "kw_hit": contains(c), "kw_any": kw_any,
+                    })
+            return out
+        if name == "match_question_bank_v2":
+            exclude = set(params.get("exclude_ids") or [])
+            hits = [r for r in self.tables.get("question_bank", [])
+                    if r["type"] == params["filter_type"] and r["id"] not in exclude]
+            return [
+                {"id": r["id"], "question": r["question"], "tags": r.get("tags"),
+                 "difficulty": r.get("difficulty"), "topic": r.get("topic"), "similarity": 0.9,
+                 "embedding": str(r.get("embedding") or [0.1, 0.2, 0.3])}
+                for r in hits[: params["candidate_count"]]
             ]
         if name == "record_llm_usage":
             usage = self.tables.setdefault("llm_usage", [])

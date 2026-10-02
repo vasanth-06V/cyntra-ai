@@ -17,6 +17,10 @@ when it is embedded or shown as evidence.
 import re
 from dataclasses import dataclass
 
+# Bump when the chunker's output changes: it is part of the content hash, so
+# resumes are re-chunked and re-embedded exactly when this changes.
+CHUNKER_VERSION = "2"
+
 TARGET_CHARS = 900  # ~225 tokens: focused enough for a short query to match
 MIN_CHARS = 120  # smaller fragments are merged into a neighbour
 
