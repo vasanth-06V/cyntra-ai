@@ -4,6 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { deleteFromStorage, uploadToStorage } from "@/lib/storage";
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx"];
+// Sent explicitly (not the browser's guess) so it always matches the bucket's
+// allowed MIME types in Supabase Storage.
+const CONTENT_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
 // Resumes are small text documents (typically ~200 KB). Keep this equal to
 // _MAX_FILE_BYTES in api/app/rag/service.py and the UI hint in ResumesView.
 const MAX_FILE_SIZE_BYTES = 500 * 1024; // 500KB
@@ -57,7 +63,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await uploadToStorage(fileKey, buffer, file.type || "application/octet-stream");
+    await uploadToStorage(fileKey, buffer, CONTENT_TYPES[extension]);
   } catch {
     return NextResponse.json(
       { error: "Could not store the file right now -- please try again." },
