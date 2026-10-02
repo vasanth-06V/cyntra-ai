@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { deleteFromR2 } from "@/lib/storage";
+import { deleteFromStorage } from "@/lib/storage";
 
 export async function DELETE(
   _request: Request,
@@ -43,7 +43,7 @@ export async function DELETE(
   }
 
   // The row is gone; a storage hiccup shouldn't turn that into an error.
-  await deleteFromR2(resume.file_key).catch((err) => {
+  await deleteFromStorage(resume.file_key).catch((err) => {
     console.error("Could not delete resume object from storage", err);
   });
 

@@ -1,24 +1,27 @@
 from functools import lru_cache
 
 import boto3
+from botocore.config import Config
 
 from app.core.config import settings
 
 
 @lru_cache
-def get_r2_client():
+def get_storage_client():
     return boto3.client(
         "s3",
-        endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
-        aws_access_key_id=settings.r2_access_key_id,
-        aws_secret_access_key=settings.r2_secret_access_key,
+        endpoint_url=settings.storage_endpoint_url,
+        region_name=settings.storage_region or "us-east-1",
+        aws_access_key_id=settings.storage_access_key_id,
+        aws_secret_access_key=settings.storage_secret_access_key,
+        config=Config(s3={"addressing_style": "path"}),
     )
 
 
 def download_bytes(object_key: str) -> bytes:
-    """Fetches a previously-uploaded file's raw bytes from R2. Uploads
-    happen from Next.js (Section 3: simple storage CRUD belongs there);
-    FastAPI only reads a file back when it needs to parse it for RAG."""
-    client = get_r2_client()
-    response = client.get_object(Bucket=settings.r2_bucket_name, Key=object_key)
+    """Fetches a previously-uploaded file's raw bytes from object storage.
+    Uploads happen from Next.js (Section 3: simple storage CRUD belongs
+    there); FastAPI only reads a file back when it needs to parse it for RAG."""
+    client = get_storage_client()
+    response = client.get_object(Bucket=settings.storage_bucket_name, Key=object_key)
     return response["Body"].read()

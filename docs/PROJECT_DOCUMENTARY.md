@@ -546,3 +546,10 @@ Offline eval, v1 -> v2 (fake embedder): section recall on the ALL-CAPS resume 0.
 **Problems faced**: a Python `\b` inside a heredoc string silently became a backspace character and made a test fake match nothing (found by a failing score; fixed -- lesson: never put regex backslashes through inline heredocs); an eval-metric artifact (merged chunks looked "cut") fixed by measuring whole lines instead of offsets.
 
 *(Next: M4 -- jobs + atomic RPCs + direct R2 upload: `jobs` table and runner with polling, atomic turn/chat writes with a per-interview lock, presigned upload and a real `setting_up` interview job.)*
+
+### [2026-10-03] Storage provider switched from Cloudflare R2 to Supabase Storage (S3 API)
+
+**Action**: The owner could not add a payment method to Cloudflare (no UPI). Storage code made provider-neutral: env vars are now `STORAGE_ENDPOINT_URL`, `STORAGE_REGION`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_BUCKET_NAME` (path-style addressing) in `apps/api/.env` and `apps/web/.env.local`; `lib/storage.ts` exports `uploadToStorage/deleteFromStorage`; `core/storage.py` has `get_storage_client`. Production config validation checks the new names.
+**Why**: Supabase Storage is free (1 GB), needs no card, and speaks the S3 protocol, so no logic changed.
+**Result**: 504 backend tests pass; `tsc` clean. Not yet exercised against a real bucket.
+**Problems**: none. The owner must create a private bucket and S3 access keys in Supabase and fill the five variables.

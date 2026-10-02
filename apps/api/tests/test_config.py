@@ -56,16 +56,16 @@ def test_invalid_fernet_secret_is_reported():
     assert any("Fernet" in p for p in problems)
 
 
-def test_production_requires_r2_and_a_non_localhost_origin():
+def test_production_requires_storage_and_a_non_localhost_origin():
     from app.core.config import config_problems
 
     problems = config_problems(_settings(environment="production"))
-    assert any("R2_BUCKET_NAME" in p for p in problems)
+    assert any("STORAGE_BUCKET_NAME" in p for p in problems)
     assert any("localhost" in p for p in problems)
 
     ok = _settings(
         environment="production",
-        r2_account_id="a", r2_access_key_id="b", r2_secret_access_key="c", r2_bucket_name="d",
+        storage_endpoint_url="https://x", storage_access_key_id="b", storage_secret_access_key="c", storage_bucket_name="d",
         cors_origins="https://app.example.com",
     )
     assert config_problems(ok) == []

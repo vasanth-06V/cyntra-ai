@@ -18,10 +18,12 @@ class Settings(BaseSettings):
 
     key_encryption_secret: str = ""
 
-    r2_account_id: str = ""
-    r2_access_key_id: str = ""
-    r2_secret_access_key: str = ""
-    r2_bucket_name: str = ""
+    # Any S3-compatible object store (Supabase Storage, Cloudflare R2, B2, ...).
+    storage_endpoint_url: str = ""
+    storage_region: str = "us-east-1"
+    storage_access_key_id: str = ""
+    storage_secret_access_key: str = ""
+    storage_bucket_name: str = ""
 
     judge0_api_url: str = ""
     judge0_api_key: str = ""
@@ -63,7 +65,12 @@ def config_problems(cfg: Settings) -> list[str]:
             )
 
     if cfg.is_production:
-        for name in ("r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket_name"):
+        for name in (
+            "storage_endpoint_url",
+            "storage_access_key_id",
+            "storage_secret_access_key",
+            "storage_bucket_name",
+        ):
             if not getattr(cfg, name):
                 problems.append(f"{name.upper()} is required in production")
         if not cfg.cors_origin_list:

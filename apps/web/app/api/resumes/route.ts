@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { deleteFromR2, uploadToR2 } from "@/lib/storage";
+import { deleteFromStorage, uploadToStorage } from "@/lib/storage";
 
 const ALLOWED_EXTENSIONS = ["pdf", "docx"];
 // Vercel functions reject request bodies over 4.5 MB, so stay under it until
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await uploadToR2(fileKey, buffer, file.type || "application/octet-stream");
+    await uploadToStorage(fileKey, buffer, file.type || "application/octet-stream");
   } catch {
     return NextResponse.json(
       { error: "Could not store the file right now -- please try again." },
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
   if (insertError) {
     // Don't leave an orphaned object behind.
-    await deleteFromR2(fileKey).catch(() => {});
+    await deleteFromStorage(fileKey).catch(() => {});
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
