@@ -40,7 +40,7 @@ MAX_CODE_CHARS = 8000
 
 _REVIEW_OPTIONS = LLMOptions(
     task="judge",
-    max_output_tokens=700,
+    max_output_tokens=1000,
     temperature=0.2,
     feature="code_review",
     prompt_id="coding.review",
@@ -266,8 +266,21 @@ async def begin_review(
 
         verdict, summary = _stored_verdict(review)
         await submissions_repo.mark_done(submission_id, verdict, summary)
+        # From here the review is finished and the submit is spent for good.
         marker = f"[Submitted a solution in {language} · {len(code.splitlines())} lines]"
-        await interviews_repo.append_turns(interview_id, user_id, marker, message)
+        for attempt in (0, 1):
+            try:
+                await interviews_repo.append_turns(interview_id, user_id, marker, message)
+                break
+            except Exception:
+                if attempt == 1:
+                    logger.warning("Could not save the review reaction", exc_info=True)
+                    raise AppError(
+                        status.HTTP_502_BAD_GATEWAY,
+                        "reply_not_saved",
+                        "Your solution was reviewed and saved, but the interviewer's reply couldn't be "
+                        "stored. Keep talking and the interview will carry on.",
+                    )
         return {"submission_id": submission_id, "message": message}
 
     async def on_failure() -> None:
@@ -275,7 +288,13 @@ async def begin_review(
         await submissions_repo.mark_failed(submission_id)
 
     try:
-        job, created = await job_runner.launch(user_id, REVIEW_JOB, submission_id, work, on_failure)
+        async def free_stale(job: dict) -> None:
+            if job.get("subject_id"):
+                await submissions_repo.mark_failed(job["subject_id"])
+
+        job, created = await job_runner.launch(
+            user_id, REVIEW_JOB, submission_id, work, on_failure, on_stale=free_stale
+        )
     except Exception:
         await submissions_repo.mark_failed(submission_id)
         raise

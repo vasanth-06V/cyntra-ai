@@ -24,8 +24,8 @@ from app.db import jobs as jobs_repo
 
 logger = logging.getLogger(__name__)
 
-MAX_CONCURRENT = 2
-STALE_AFTER_SECONDS = 300  # no sign of life for this long = nobody is running it
+MAX_CONCURRENT = 6  # the work is I/O-bound on each user's own provider key
+STALE_AFTER_SECONDS = 420  # no sign of life for this long = nobody is running it
 
 Reporter = Callable[[str], Awaitable[None]]
 Work = Callable[[Reporter], Awaitable[dict]]
@@ -67,7 +67,14 @@ async def _safe(coro_fn, *args) -> None:
 
 async def _run(job_id: str, work: Work, on_failure: OnFailure | None) -> None:
     async with _semaphore():
-        await _safe(jobs_repo.mark_started, job_id)
+        try:
+            started = await jobs_repo.mark_started(job_id)
+        except Exception:
+            logger.warning("Could not mark job %s started", job_id, exc_info=True)
+            started = True  # bookkeeping trouble must not cancel the user's work
+        if not started:
+            logger.info("Job %s is no longer queued (failed while waiting); skipped", job_id)
+            return
 
         async def report(text: str) -> None:
             await _safe(jobs_repo.mark_progress, job_id, text)
@@ -98,19 +105,29 @@ async def launch(
     subject_id: str | None,
     work: Work,
     on_failure: OnFailure | None = None,
+    on_stale: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[dict, bool]:
     """Starts `work` as a job. Returns (job_row, created). If the user already
     has an active job of this kind, nothing is started and that job is
-    returned with created=False."""
-    job = await jobs_repo.create_job(user_id, kind, subject_id)
-    if job is None:
-        existing = await jobs_repo.active_job(user_id, kind)
-        if existing is not None:
-            return existing, False
-        # It finished between the two calls: try once more.
+    returned with created=False -- unless it has shown no sign of life for
+    STALE_AFTER_SECONDS (its process is gone, or a status write was lost): it
+    is then failed, `on_stale` tidies whatever it was about, and a fresh job
+    starts, so one stuck row can never block a feature until the next restart."""
+    job = None
+    for _ in range(3):
         job = await jobs_repo.create_job(user_id, kind, subject_id)
-        if job is None:
-            raise RuntimeError("could not create job")
+        if job is not None:
+            break
+        existing = await jobs_repo.active_job(user_id, kind)
+        if existing is None:
+            continue  # it finished between the two calls: try again
+        if not is_stale(existing):
+            return existing, False
+        await fail_stale(existing, "The previous attempt stopped responding -- please try again.")
+        if on_stale is not None:
+            await _safe(on_stale, existing)
+    if job is None:
+        raise RuntimeError("could not create job")
     background.schedule(_run(job["id"], work, on_failure), name=f"job:{job['id']}")
     return job, True
 

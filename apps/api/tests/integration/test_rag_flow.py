@@ -41,8 +41,9 @@ def r2(monkeypatch):
     return store
 
 
-def _resume(env, user=USER_A, key="resumes/u/r.docx"):
-    return env.db.seed("resumes", user_id=user, file_key=key)
+def _resume(env, user=USER_A, name="r.docx"):
+    # Real keys are resumes/<owner>/<file>; the backend refuses any other prefix.
+    return env.db.seed("resumes", user_id=user, file_key=f"resumes/{user}/{name}")
 
 
 async def test_process_resume_parses_chunks_embeds_and_stores_digest(client, env, r2):
@@ -139,7 +140,7 @@ async def test_corrupt_file_is_clean_4xx(client, env, r2):
 
 async def test_missing_stored_object_is_not_a_500(client, env, r2):
     seed_key(env, USER_A, "gemini", "primary", "gem")
-    resume = _resume(env, key="resumes/u/never-uploaded.pdf")
+    resume = _resume(env, name="never-uploaded.pdf")
     r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
     assert r.status_code != 500
 
@@ -187,3 +188,24 @@ async def test_a_bare_404_from_storage_is_reported_as_file_not_found(client, env
     resume = _resume(env)
     r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
     assert r.status_code == 404
+
+
+async def test_a_file_reference_outside_the_owners_prefix_is_refused_before_any_download(client, env, r2):
+    seed_key(env, USER_A, "gemini", "primary", "gem")
+    victim = _resume(env, user=USER_B)
+    r2[victim["file_key"]] = _docx_bytes("Experience", "The victim's private resume text")
+    for bad in (victim["file_key"], f"resumes/{USER_A}/../{USER_B}/x.docx", "somewhere/else.docx"):
+        row = env.db.seed("resumes", user_id=USER_A, file_key=bad)
+        r = await client.post(f"/rag/resumes/{row['id']}/process", headers=as_user(USER_A))
+        assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_file", bad
+    assert r2["calls"] == [] and env.gemini.embed_calls == []  # nothing was fetched or embedded
+    assert all(not r["parsed_text"] for r in env.db.rows("resumes", user_id=USER_A))
+
+
+async def test_extracted_text_is_capped(client, env, r2):
+    seed_key(env, USER_A, "gemini", "primary", "gem")
+    resume = _resume(env)
+    r2[resume["file_key"]] = _docx_bytes("Experience", *["Built Python services on Kubernetes. " * 30] * 60)
+    r = await client.post(f"/rag/resumes/{resume['id']}/process", headers=as_user(USER_A))
+    assert r.status_code == 200
+    assert len(env.db.rows("resumes", id=resume["id"])[0]["parsed_text"]) <= 40_000

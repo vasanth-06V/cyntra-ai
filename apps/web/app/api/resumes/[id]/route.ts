@@ -34,12 +34,8 @@ export async function DELETE(
     .eq("user_id", user.id);
 
   if (error) {
-    // 23503 = foreign-key violation: an interview still references this resume.
-    const message =
-      error.code === "23503"
-        ? "This resume is used by an interview and can't be deleted yet."
-        : error.message;
-    return NextResponse.json({ error: message }, { status: error.code === "23503" ? 409 : 500 });
+    // Interviews that used this resume are kept (their link is cleared by the database).
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   // The row is gone; a storage hiccup shouldn't turn that into an error.

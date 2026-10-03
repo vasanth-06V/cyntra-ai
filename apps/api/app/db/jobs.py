@@ -78,8 +78,22 @@ async def update_job(job_id: str, fields: dict) -> None:
     await run(_q)
 
 
-async def mark_started(job_id: str) -> None:
-    await update_job(job_id, {"status": "running", "started_at": _now(), "heartbeat_at": _now()})
+async def mark_started(job_id: str) -> bool:
+    """queued -> running, only if the job is still queued. False means it was
+    failed in the meantime (e.g. judged stale while waiting for a slot): its
+    work must not run, or it would act on state the user has moved on from."""
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("jobs")
+            .update({"status": "running", "started_at": _now(), "heartbeat_at": _now()})
+            .eq("id", job_id)
+            .eq("status", "queued")
+            .execute()
+        )
+
+    return bool((await run(_q)).data)
 
 
 async def mark_progress(job_id: str, text: str) -> None:

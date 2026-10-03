@@ -16,7 +16,7 @@ _OPTIONS = LLMOptions(task="chat", feature="chat")
 
 # Only the recent window is sent: input stays bounded however long the chat gets.
 _MAX_HISTORY_MESSAGES = 10
-_HISTORY_TOKEN_BUDGET = 2000
+_HISTORY_TOKEN_BUDGET = 3000  # room for a maximum-length (8,000 character) message plus history
 
 # What the UI loads when it opens a conversation (newest N, shown oldest-first).
 DEFAULT_MESSAGE_PAGE = 200

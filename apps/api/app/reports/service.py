@@ -39,7 +39,7 @@ DISCLAIMER = (
 
 _OPTIONS = LLMOptions(
     task="report",
-    max_output_tokens=1200,
+    max_output_tokens=1800,
     temperature=0.3,
     feature="interview_report",
     prompt_id="report.v1",
@@ -85,7 +85,7 @@ async def purge_expired() -> int:
 
 
 async def list_reports(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
-    await purge_expired()
+    # Expired reports are filtered here and deleted by the startup/6-hourly sweep.
     rows = await reports_repo.list_reports(user_id, limit, offset)
     now = _now()
     return [_summary_row(r) for r in rows if not is_expired(r, now)]

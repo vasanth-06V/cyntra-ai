@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -75,7 +76,8 @@ _BRIEF_MAX_TOKENS = 300
 _RESUME_FALLBACK_TOKENS = 400
 _TURN_TOKEN_CAP = 120
 _QUESTION_TOKEN_CAP = 400
-_PROMPT_BUDGET_TOKENS = 1200
+_PROMPT_BUDGET_TOKENS = 2000
+_MIN_HISTORY_TOKENS = 700  # always room for the last interviewer turn and a full-length answer
 
 
 # Thin aliases onto the db layer. Kept as module-level names so the
@@ -357,20 +359,26 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     question_ids = interview.get("selected_question_ids") or []
     # Only while a problem is actually being worked on -- not during the intro
     # (which would reveal it early) or the wrap-up.
-    if (
+    in_problem = bool(
         config.needs_coding_platform
         and question_ids
         and (current_phase.startswith("problem_") or current_phase == "coding")
-    ):
+    )
+    # The reads below do not depend on each other: one round of waiting, not three.
+    reads = [_recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT - 1)]
+    if in_problem:
         index = min(question_index_for(current_phase), len(question_ids) - 1)
-        question_text = await _get_question_text(question_ids[index])
+        reads += [_get_question_text(question_ids[index]), _get_review_summary(interview_id, question_ids[index])]
+    results = await asyncio.gather(*reads)
+    recent = results[0]
+    if in_problem:
+        question_text, submitted = results[1], results[2]
         if question_text:
             question_block = (
                 f"\nCurrent question: {truncate(question_text, _QUESTION_TOKEN_CAP)}"
             )
         # After a submission the reviewer's short assessment steers follow-ups;
         # the reference solution itself never enters this prompt.
-        submitted = await _get_review_summary(interview_id, question_ids[index])
         if submitted and submitted.get("summary"):
             review_note = (
                 f"The candidate submitted {submitted['language']} code. "
@@ -400,7 +408,6 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     # The candidate's new answer goes into the prompt but is only *saved* once
     # the reply succeeded -- otherwise a failed call (429/503) would leave a
     # dangling answer, and the retry would store it twice.
-    recent = await _recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT - 1)
     for turn in recent:
         messages.append(as_message(turn["speaker"] == "ai", turn["text"], _TURN_TOKEN_CAP))
     messages.append(as_message(False, content, _TURN_TOKEN_CAP * 4))
@@ -408,8 +415,12 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     # Brief + running summary ride along as data in the conversation, and the
     # window is trimmed to leave room for them.
     context = context_block(brief, interview.get("running_summary"), boundary, review_note)
+    # The system message (which carries the current question) and the context
+    # block come first; the history keeps at least _MIN_HISTORY_TOKENS however
+    # large they are, so a long question never pushes out the conversation.
+    fixed = estimate_tokens(system_text) + estimate_tokens(context)
     messages = fit_to_budget(
-        messages, _PROMPT_BUDGET_TOKENS - estimate_tokens(context), keep_leading=leading
+        messages, max(_PROMPT_BUDGET_TOKENS, fixed + _MIN_HISTORY_TOKENS), keep_leading=leading
     )
     messages = attach_context(messages, leading, context)
     messages = ensure_user_first(messages, leading)

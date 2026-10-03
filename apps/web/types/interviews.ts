@@ -29,7 +29,7 @@ export type Interview = {
   status: InterviewStatus;
   phase: string | null;
   provider: InterviewProviderName;
-  resume_id: string;
+  resume_id: string | null;
   started_at: string | null;
   ends_at: string | null;
   created_at: string;

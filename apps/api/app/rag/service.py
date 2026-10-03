@@ -34,6 +34,7 @@ _DIGEST_INPUT_TOKENS = 1500
 _DIGEST_MAX_TOKENS = 300
 _MAX_FILE_BYTES = 500 * 1024  # keep equal to the web upload limit
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request
+_MAX_TEXT_CHARS = 40_000  # ~10 pages of dense text; a resume is far shorter
 
 
 def content_hash(text: str) -> str:
@@ -84,8 +85,17 @@ async def process_resume(user_id: str, resume_id: str) -> int:
     if not gemini_key:
         raise AppError(status.HTTP_412_PRECONDITION_FAILED, "key_missing", "A valid primary Gemini key is required to process a resume")
 
+    # The backend reads with storage credentials that can see every user's files,
+    # so a key written by a client must never be trusted to point anywhere else.
+    file_key = str(resume["file_key"])
+    if not file_key.startswith(f"resumes/{user_id}/") or ".." in file_key:
+        raise AppError(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "invalid_file",
+            "This resume's file reference is not valid -- please upload it again.",
+        )
     try:
-        file_bytes = await asyncio.to_thread(download_bytes, resume["file_key"])
+        file_bytes = await asyncio.to_thread(download_bytes, file_key)
     except Exception as exc:
         # Providers differ: R2/S3 send code NoSuchKey, Supabase Storage sends a
         # bare 404 with an empty code -- so look at the HTTP status too.
@@ -103,7 +113,7 @@ async def process_resume(user_id: str, resume_id: str) -> int:
             detail="This file is too large to process (max 500KB).",
         )
     try:
-        text = await asyncio.to_thread(extract_text, resume["file_key"], file_bytes)
+        text = (await asyncio.to_thread(extract_text, file_key, file_bytes))[:_MAX_TEXT_CHARS]
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

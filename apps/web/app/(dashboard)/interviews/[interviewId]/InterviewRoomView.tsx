@@ -184,6 +184,10 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       setMessages((prev) => prev.filter((m) => m.id !== localId));
       setInput(content);
       setSendError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError && err.code === "interview_ended") {
+        // The server closed the interview (time is up): show it as finished.
+        setInterview((prev) => (prev ? { ...prev, status: "completed" } : prev));
+      }
     } finally {
       setSending(false);
     }

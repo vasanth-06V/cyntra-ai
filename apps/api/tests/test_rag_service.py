@@ -20,7 +20,7 @@ def _chunks(*bodies):
 @pytest.fixture(autouse=True)
 def _common_mocks(monkeypatch):
     """Everything outside process_resume's own logic is replaced; returns a log."""
-    log = {"embeds": [], "replace": [], "resume": {"id": "resume-1", "file_key": "resume-1.docx"}}
+    log = {"embeds": [], "replace": [], "resume": {"id": "resume-1", "file_key": "resumes/user-1/resume-1.docx"}}
 
     async def get_owned(user_id, resume_id):
         return log["resume"]

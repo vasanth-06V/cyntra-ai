@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 from fastapi import status
@@ -5,8 +6,15 @@ from fastapi import status
 from app.core.errors import AppError
 from app.core.security import encrypt_key
 from app.db import keys as keys_repo
-from app.providers.base import ProviderRateLimitError, ProviderUnavailableError
+from app.providers.base import (
+    ProviderAuthError,
+    ProviderRateLimitError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from app.providers.registry import get_adapter
+
+logger = logging.getLogger(__name__)
 
 
 async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> dict:
@@ -16,6 +24,14 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
     adapter = get_adapter(provider)
     try:
         is_valid = await adapter.validate(api_key)
+    except ProviderAuthError:
+        is_valid = False  # e.g. a Claude key without model access: rejected, not an outage
+    except ProviderTimeoutError as exc:
+        raise AppError(
+            status.HTTP_504_GATEWAY_TIMEOUT,
+            "provider_timeout",
+            f"{provider.capitalize()} took too long to answer, so the key couldn't be checked. Nothing was saved -- try again.",
+        ) from exc
     except ProviderRateLimitError as exc:
         raise AppError(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -27,6 +43,14 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "provider_overloaded",
             f"{provider.capitalize()} is temporarily unavailable, so the key couldn't be checked. Nothing was saved -- try again shortly.",
+        ) from exc
+
+    except Exception as exc:
+        logger.warning("Key validation failed unexpectedly for %s", provider, exc_info=True)
+        raise AppError(
+            status.HTTP_502_BAD_GATEWAY,
+            "provider_error",
+            f"{provider.capitalize()} returned an unexpected error, so the key couldn't be checked. Nothing was saved -- try again.",
         ) from exc
 
     if not is_valid:

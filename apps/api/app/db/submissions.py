@@ -91,6 +91,8 @@ async def mark_done(submission_id: str, verdict: dict, summary: str) -> None:
 
 
 async def mark_failed(submission_id: str) -> None:
+    """Frees the single submit -- but only while the review is still running.
+    A review that already finished ('done') keeps its verdict and its use of the submit."""
     supabase = get_supabase()
 
     def _q():
@@ -98,6 +100,7 @@ async def mark_failed(submission_id: str) -> None:
             supabase.table("code_submissions")
             .update({"status": "failed"})
             .eq("id", submission_id)
+            .eq("status", "review")
             .execute()
         )
 

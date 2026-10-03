@@ -5,7 +5,7 @@ import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import type { Job } from "@/types/jobs";
 
 const POLL_EVERY_MS = 1500;
-const GIVE_UP_AFTER_MS = 3 * 60 * 1000;
+const GIVE_UP_AFTER_MS = 5 * 60 * 1000; // the server's worst case is about 4.5 minutes
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type Started = { ready: boolean; job_id: string | null };

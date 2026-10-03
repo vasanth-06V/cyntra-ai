@@ -1,7 +1,10 @@
 from datetime import datetime
 from enum import Enum
 
+from app.core.ids import UuidStr
 from pydantic import BaseModel, Field
+
+from app.core.ids import UuidStr
 
 
 class InterviewProviderName(str, Enum):
@@ -23,7 +26,7 @@ class InterviewType(str, Enum):
 class StartInterviewRequest(BaseModel):
     type: InterviewType
     provider: InterviewProviderName
-    resume_id: str
+    resume_id: UuidStr
     jd_text: str = Field(min_length=10, max_length=20000)
 
 
@@ -38,7 +41,7 @@ class InterviewOut(BaseModel):
     status: str
     phase: str | None
     provider: str
-    resume_id: str
+    resume_id: str | None  # NULL once the resume was deleted (the interview is kept)
     started_at: datetime | None
     ends_at: datetime | None
     created_at: datetime

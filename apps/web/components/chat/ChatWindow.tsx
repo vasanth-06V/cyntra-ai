@@ -50,11 +50,13 @@ export function ChatWindow({
       { id: assistantId, role: "assistant", provider, content: "", created_at: "" },
     ]);
 
+    let received = false;
     try {
       for await (const chunk of apiClient.streamPost(
         `/chat/conversations/${conversationId}/messages`,
         { provider, content }
       )) {
+        received = true;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId ? { ...m, content: m.content + chunk } : m
@@ -63,12 +65,16 @@ export function ChatWindow({
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
-      // Nothing was saved for a failed send: drop both local bubbles and give
-      // the draft back so it can be retried without retyping.
-      setMessages((prev) =>
-        prev.filter((m) => m.id !== assistantId && m.id !== userMessage.id)
-      );
-      setInput(content);
+      if (!received) {
+        // Nothing was saved for a send that failed before the first word: drop
+        // both local bubbles and give the draft back so it can be retried.
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== assistantId && m.id !== userMessage.id)
+        );
+        setInput(content);
+      }
+      // Once words arrived the server keeps the partial exchange, so keep what
+      // the user saw (retrying would otherwise store the question twice).
     } finally {
       setSending(false);
     }

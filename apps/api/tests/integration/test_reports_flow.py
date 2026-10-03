@@ -266,14 +266,15 @@ async def test_a_report_is_available_until_exactly_seven_days_then_refused(clien
     assert env.db.rows("interview_reports") == []  # refused first, then deleted
 
 
-async def test_the_list_never_shows_expired_reports_and_purges_them(client, done):
+async def test_the_list_never_shows_expired_reports_and_does_not_sweep_the_whole_table(client, done):
     env, interview = done
     _seed_report(env, interview, timedelta(days=8))
     other = env.db.seed("interviews", user_id=USER_B, type="hr", jd_text="x", resume_id=interview["resume_id"], status="completed")
     env.db.seed("interview_reports", user_id=USER_B, interview_id=other["id"], interview_type="hr", overall_score=50,
                 report_data={}, created_at=_ago(days=9), expires_at=_ago(days=2))
-    assert (await client.get("/reports", headers=as_user(USER_A))).json() == []
-    assert env.db.rows("interview_reports") == []  # the sweep ran on the list call, for everyone
+    assert (await client.get("/reports", headers=as_user(USER_A))).json() == []  # hidden at read time
+    assert len(env.db.rows("interview_reports")) == 2  # deleting is the sweep's job, not every list call's
+    assert await reports_service.purge_expired() == 2
 
 
 async def test_the_sweep_deletes_only_expired_reports(env, done):

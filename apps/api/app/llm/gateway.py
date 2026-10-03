@@ -316,14 +316,18 @@ async def _with_failover(
     try:
         try:
             return await _one_key(provider, bucket, primary, fn, options, trace)
-        except ProviderRateLimitError:
+        except ProviderRateLimitError as primary_error:
             backup = await _backup_key(user_id, provider)
             trace.slot, trace.failed_over = "backup", True
             try:
                 result = await _one_key(provider, bucket, backup, fn, options, trace)
             except ProviderRateLimitError as exc:
                 raise _both_exhausted(provider, exc) from exc
-            await _notify_failover(user_id, provider)
+            # "cooldown" means the primary was already known to be exhausted and
+            # the user was told when that happened: one notice per failover,
+            # not one per call for the rest of the day.
+            if primary_error.kind != "cooldown":
+                await _notify_failover(user_id, provider)
             return result
     except ProviderError as exc:
         trace.outcome = type(exc).__name__
@@ -572,7 +576,7 @@ async def stream(
             try:
                 async for chunk in one_key("primary", primary):
                     yield chunk
-            except ProviderRateLimitError:
+            except ProviderRateLimitError as primary_error:
                 if chunk_sent:
                     raise
                 backup = await _backup_key(user_id, provider)
@@ -584,7 +588,8 @@ async def stream(
                     if chunk_sent:
                         raise
                     raise _both_exhausted(provider, exc) from exc
-                await _notify_failover(user_id, provider)
+                if primary_error.kind != "cooldown":
+                    await _notify_failover(user_id, provider)
         except ProviderError as exc:
             trace.outcome = type(exc).__name__
             if chunk_sent:
@@ -613,7 +618,7 @@ async def stream(
 # are cached -- documents are stored in the database, not looked up again. The
 # cache holds vectors only, keyed by a hash that includes the embedding
 # version, so a model change can never serve a stale vector.
-_query_cache = TTLCache(ttl_seconds=3600, max_items=2000)
+_query_cache = TTLCache(ttl_seconds=3600, max_items=500)  # ~25 KB per vector as a Python list
 
 
 def _query_key(text: str) -> str:

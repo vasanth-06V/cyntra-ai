@@ -153,7 +153,7 @@ async def test_progress_is_visible_while_running_and_cleared_when_done(env):
     assert row["status"] == "succeeded" and row["progress"] is None and row["result"] == {"ok": True}
 
 
-async def test_at_most_two_jobs_run_at_once_and_the_rest_wait_queued(env):
+async def test_the_slot_limit_holds_and_the_rest_wait_queued(env):
     gate = asyncio.Event()
     running = 0
     peak = 0
@@ -166,14 +166,48 @@ async def test_at_most_two_jobs_run_at_once_and_the_rest_wait_queued(env):
         running -= 1
         return {}
 
-    users = [f"00000000-0000-0000-0000-00000000000{i}" for i in range(1, 5)]
+    limit = job_runner.MAX_CONCURRENT
+    users = [f"00000000-0000-0000-0000-{i:012d}" for i in range(1, limit + 3)]
     jobs = [(await job_runner.launch(u, "interview_setup", None, work))[0] for u in users]
     await asyncio.sleep(0.05)
     statuses = sorted(env.db.rows("jobs", id=j["id"])[0]["status"] for j in jobs)
-    assert statuses == ["queued", "queued", "running", "running"] and peak == 2
+    assert statuses == ["queued"] * 2 + ["running"] * limit and peak == limit
     gate.set()
     await background.drain()
     assert all(env.db.rows("jobs", id=j["id"])[0]["status"] == "succeeded" for j in jobs)
+
+
+async def test_a_job_failed_while_it_waited_for_a_slot_never_runs(env):
+    ran = []
+
+    async def work(report):
+        ran.append(1)
+        return {}
+
+    job, _ = await job_runner.launch(USER_A, "interview_setup", None, work)
+    # Judged stale and failed before the task got to start (the task has not been scheduled yet).
+    env.db.rows("jobs", id=job["id"])[0].update(status="failed", error={"code": "interrupted", "message": "x", "status": 503})
+    await background.drain()
+    assert ran == [] and env.db.rows("jobs", id=job["id"])[0]["status"] == "failed"  # not resurrected
+
+
+async def test_a_stuck_running_job_of_any_kind_no_longer_blocks_a_new_one(env):
+    old = (datetime.now(UTC) - timedelta(minutes=30)).isoformat()
+    stuck = env.db.seed("jobs", user_id=USER_A, kind="report_generate", status="running", subject_id=None,
+                        created_at=old, heartbeat_at=old)
+    seen = []
+
+    async def work(report):
+        return {"ok": True}
+
+    async def on_stale(job):
+        seen.append(job["id"])
+
+    job, created = await job_runner.launch(USER_A, "report_generate", None, work, on_stale=on_stale)
+    assert created and job["id"] != stuck["id"] and seen == [stuck["id"]]
+    await background.drain()
+    assert env.db.rows("jobs", id=stuck["id"])[0]["status"] == "failed"
+    assert env.db.rows("jobs", id=job["id"])[0]["status"] == "succeeded"
 
 
 async def test_an_unexpected_crash_is_reported_generically_without_leaking_details(env):
