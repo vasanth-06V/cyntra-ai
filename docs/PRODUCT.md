@@ -85,7 +85,7 @@ A **single-tenant AI platform** with three services under one account system, ru
 | Question bank admin (Owner/Admins with permission): create/edit/delete with test cases and tags, embedded on save | 🟡 |
 | Polished ~5-minute "setting up" screen with progress messages and 3D scene | 🔜 (currently synchronous + static scene) |
 | **Coding round** (Monaco editor beside the chat; any language; one submit per problem; the interviewer reviews the logic against the question bank's reference solution; nothing is executed) | ✅ built, awaiting migration 0026 and live check |
-| **Voice** (AI speaks via TTS, live STT transcript, silence/interruption handling) — "the heart of the product" | 🔜 Phase 8 |
+| **Voice** (browser speech recognition in, speech synthesis out; live captions, silence endpointing with edit-before-send, canned nudges, optional interruption) | ✅ built, awaiting a hands-on test |
 | **Post-interview report**, downloadable for exactly 7 days then purged | 🔜 Phase 9 |
 | Untimed practice mode | ⏸ deferred |
 | Session recording/playback | ❌ declined |

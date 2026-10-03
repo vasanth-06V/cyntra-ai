@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/Button";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
 import { PhaseTimer } from "@/components/interview/PhaseTimer";
+import { VoiceBar } from "@/components/interview/VoiceBar";
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, type VoiceSettings } from "@/lib/voice/settings";
+import { useVoice } from "@/lib/voice/useVoice";
 import type { ChatMessage } from "@/types/chat";
 import type { Interview, TranscriptEntry, TurnResponse } from "@/types/interviews";
 
@@ -36,14 +39,65 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [codeActive, setCodeActive] = useState(false);
   const [reviewing, setReviewing] = useState(false);
 
+  // Voice (browser speech recognition in, speech synthesis out) is only an I/O
+  // layer: spoken answers go through the same turn endpoint as typed ones.
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(DEFAULT_SETTINGS);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const sendRef = useRef<(text: string) => void>(() => {});
+  const speakRef = useRef<(text: string) => void>(() => {});
+
+  const lastInterviewerText = useCallback(() => {
+    const last = [...messagesRef.current].reverse().find((m) => m.role === "assistant");
+    return last ? last.content : null;
+  }, []);
+
   const reloadTranscript = useCallback(() => {
     apiClient
       .get<TranscriptEntry[]>(`/interviews/${interviewId}/transcript`)
-      .then((transcript) => setMessages(transcript.map(toChatMessage)))
+      .then((transcript) => {
+        setMessages(transcript.map(toChatMessage));
+        const last = transcript[transcript.length - 1];
+        if (last && last.speaker === "ai") speakRef.current(last.text);
+      })
       .catch(() => {
         // the next turn reloads it anyway
       });
   }, [interviewId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  });
+
+  // Remembered per browser; read after mount so server and client render alike.
+  useEffect(() => {
+    const t = setTimeout(() => setVoiceSettings(loadSettings()), 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  const isActive = interview?.status === "in_progress";
+  const voice = useVoice({
+    active: Boolean(isActive) && voiceSettings.enabled,
+    busy: sending || reviewing,
+    settings: voiceSettings,
+    onUtterance: (text) => sendRef.current(text),
+    lastInterviewerText,
+  });
+  useEffect(() => {
+    speakRef.current = (text) => void voice.speak(text);
+  });
+
+  function changeVoiceSettings(next: VoiceSettings) {
+    setVoiceSettings(next);
+    saveSettings(next);
+  }
+
+  function enableVoice() {
+    // Runs inside the click, which is what lets the browser speak at all.
+    changeVoiceSettings({ ...voiceSettings, enabled: true, consented: true });
+    const last = lastInterviewerText();
+    const endsWithInterviewer = messagesRef.current[messagesRef.current.length - 1]?.role === "assistant";
+    if (last && endsWithInterviewer) void voice.speak(last);
+  }
 
   useEffect(() => {
     Promise.all([
@@ -87,9 +141,12 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     }
   }
 
-  async function handleSend(e: React.FormEvent) {
+  function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    const content = input.trim();
+    void sendContent(input.trim());
+  }
+
+  async function sendContent(content: string) {
     if (!content || sending || reviewing || interview?.status !== "in_progress") return;
 
     const localId = `local-${Date.now()}`;
@@ -117,6 +174,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           created_at: "",
         },
       ]);
+      speakRef.current(response.message);
       if (response.is_final_phase && response.minutes_remaining <= 0) {
         await handleComplete();
       }
@@ -131,10 +189,12 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     }
   }
 
+  useEffect(() => {
+    sendRef.current = (text) => void sendContent(text);
+  });
+
   if (loadError) return <p role="alert" className="p-6 text-sm text-destructive">{loadError}</p>;
   if (!interview) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
-
-  const isActive = interview.status === "in_progress";
 
   return (
     <div className="flex h-[calc(100vh-8.5rem)] flex-col">
@@ -159,6 +219,19 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {isActive && (
+        <VoiceBar
+          voice={voice}
+          settings={voiceSettings}
+          onSettingsChange={changeVoiceSettings}
+          onEnable={enableVoice}
+          onDisable={() => changeVoiceSettings({ ...voiceSettings, enabled: false })}
+          onSendCaption={voice.sendNow}
+          reviewing={reviewing}
+          sending={sending}
+        />
+      )}
 
       {isActive ? (
         <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border p-3">

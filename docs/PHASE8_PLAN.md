@@ -1,6 +1,6 @@
 # Phase 8 — Voice (plan, for approval)
 
-Status: **DRAFT 2026-10-03, awaiting the owner's approval.** Nothing below is built yet.
+Status: **APPROVED 2026-10-03. Built and committed (frontend only, no migration); awaiting the owner's hands-on test in Chrome/Edge.**
 Constraints: free tier only; the interview conversation is the product; the text pipeline (turns, jobs, atomic writes, coding round) already works and must not be rewritten.
 
 ## 1. The decision: voice as an I/O layer, in the browser
