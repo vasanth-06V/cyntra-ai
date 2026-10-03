@@ -55,6 +55,11 @@ def start_mocks(monkeypatch):
 
     monkeypatch.setattr(service.gateway, "embed", fake_embed)
     monkeypatch.setattr(service, "_update_interview", fake_update)
+    async def _if_setting_up(iid, fields, _f=fake_update):
+        await _f(iid, fields)
+        return True
+
+    monkeypatch.setattr(service, "_update_interview_if_setting_up", _if_setting_up)
     monkeypatch.setattr(service, "_append_transcript", fake_append)
     return calls
 

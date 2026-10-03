@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import HTTPException, status
 
 from app.core.errors import AppError
@@ -6,10 +8,13 @@ from app.ats.feedback import generate_feedback
 from app.ats.requirements_extractor import extract_requirements
 from app.ats.scorer import composite_score, formatting_score, keyword_score, term_present
 from app.ats.semantic import Coverage, build_coverage, query_text, semantic_score
+from app.db import ats_history
 from app.db import resumes as resumes_repo
 from app.db.keys import get_key_row
 from app.llm import gateway
 from app.rag.retrieval import match_resume_chunks_multi
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_owned_resume(user_id: str, resume_id: str) -> dict:
@@ -71,7 +76,7 @@ async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str
         fmt_score,
     )
 
-    return {
+    result = {
         "composite_score": composite,
         "keyword_score": kw_score,
         "semantic_score": sem_score,
@@ -91,3 +96,34 @@ async def score_resume(user_id: str, resume_id: str, provider: str, jd_text: str
             for c in coverage
         ],
     }
+
+    # Keep the result so the user can look back (the last 10 per resume). Saving
+    # is a convenience: if it fails the score they just earned is still returned.
+    try:
+        result["history_id"] = await ats_history.record_score(
+            user_id,
+            resume_id,
+            requirements["title"] or None,
+            jd_text.strip()[:300],
+            provider,
+            composite,
+            {k: v for k, v in result.items() if k != "history_id"},
+        )
+    except Exception:
+        logger.warning("Could not save the ATS result to history", exc_info=True)
+    return result
+
+
+async def list_history(user_id: str, resume_id: str | None, limit: int, offset: int) -> list[dict]:
+    return await ats_history.list_scores(user_id, resume_id, limit, offset)
+
+
+async def get_history(user_id: str, score_id: str) -> dict:
+    row = await ats_history.get_score(user_id, score_id)
+    if not row:
+        raise AppError(status.HTTP_404_NOT_FOUND, "not_found", "That score was not found.")
+    return row
+
+
+async def delete_history(user_id: str, score_id: str) -> None:
+    await ats_history.delete_score(user_id, score_id)

@@ -27,6 +27,22 @@ async def list_conversations(user_id: str, limit: int = 50, offset: int = 0) -> 
     return (await run(_q)).data
 
 
+async def rename_conversation(user_id: str, conversation_id: str, title: str) -> dict | None:
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("conversations")
+            .update({"title": title})
+            .eq("id", conversation_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+
+    rows = (await run(_q)).data
+    return rows[0] if rows else None
+
+
 async def get_owned_conversation(user_id: str, conversation_id: str) -> dict | None:
     supabase = get_supabase()
 

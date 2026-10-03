@@ -284,6 +284,18 @@ class FakeSupabase:
     def table(self, name):
         return _Query(self, name)
 
+    @property
+    def auth(self):
+        """Just enough of supabase.auth.admin for the team listing."""
+        db = self
+
+        class _Admin:
+            @staticmethod
+            def list_users(page=1, per_page=50):
+                return [SimpleNamespace(id=u["id"], email=u["email"]) for u in db.tables.get("auth_users", [])]
+
+        return SimpleNamespace(admin=_Admin())
+
     def rpc(self, name, params):
         return _Rpc(self, name, params)
 
@@ -355,6 +367,21 @@ class FakeSupabase:
             self.seed("chat_messages", conversation_id=params["p_conversation_id"], role="assistant",
                       content=params["p_assistant_text"], provider=params["p_provider"])
             return None
+        if name == "record_ats_score":
+            resume = next((r for r in self.tables.get("resumes", [])
+                           if r["id"] == params["p_resume_id"] and r["user_id"] == params["p_user_id"]), None)
+            if resume is None:
+                raise APIError({"message": "resume not found", "code": "P0002", "details": None, "hint": None})
+            row = self.seed("ats_scores", user_id=params["p_user_id"], resume_id=params["p_resume_id"],
+                            job_title=params["p_job_title"], jd_excerpt=params["p_jd_excerpt"],
+                            provider=params["p_provider"], composite_score=params["p_composite"],
+                            result=params["p_result"], created_at=datetime.now(UTC).isoformat())
+            mine = sorted((r for r in self.tables["ats_scores"] if r["resume_id"] == params["p_resume_id"]),
+                          key=lambda r: (r["created_at"], r["id"]), reverse=True)
+            keep = {r["id"] for r in mine[: params.get("p_keep", 10)]}
+            self.tables["ats_scores"] = [r for r in self.tables["ats_scores"]
+                                         if r["resume_id"] != params["p_resume_id"] or r["id"] in keep]
+            return row["id"]
         if name == "match_resume_chunks_multi":
             chunks = sorted(
                 (r for r in self.tables.get("resume_chunks", []) if r["resume_id"] == params["filter_resume_id"]),

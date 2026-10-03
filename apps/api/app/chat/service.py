@@ -26,6 +26,13 @@ async def create_conversation(user_id: str, title: str | None) -> dict:
     return await chat_repo.create_conversation(user_id, title)
 
 
+async def rename_conversation(user_id: str, conversation_id: str, title: str) -> dict:
+    row = await chat_repo.rename_conversation(user_id, conversation_id, title.strip())
+    if not row:
+        raise AppError(status.HTTP_404_NOT_FOUND, "not_found", "Conversation not found")
+    return row
+
+
 async def list_conversations(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
     return await chat_repo.list_conversations(user_id, limit, offset)
 

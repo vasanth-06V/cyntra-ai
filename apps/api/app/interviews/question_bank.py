@@ -96,10 +96,14 @@ async def update_question(
     topic: str | None = None,
     solution_code: str | None = None,
     solution_language: str | None = None,
+    clear: set[str] | None = None,
 ) -> dict:
     await _require_permission(user_id)
 
+    clear = clear or set()
     updates: dict = {}
+    if "difficulty" in clear:
+        updates["difficulty"] = None
     if solution_code is not None:
         updates["solution_code"] = solution_code.strip() or None
         if updates["solution_code"] is None:
@@ -118,13 +122,13 @@ async def update_question(
         updates["difficulty"] = difficulty
 
     # Anything that is part of what the question is embedded as re-embeds it.
-    if any(v is not None for v in (question, tags, topic)):
+    if any(v is not None for v in (question, tags, topic)) or "topic" in clear:
         current = await questions_repo.get_question(question_id)
         if not current:
             raise AppError(status.HTTP_404_NOT_FOUND, "not_found", "Question not found")
         merged_question = question if question is not None else current["question"]
         merged_tags = tags if tags is not None else current.get("tags")
-        merged_topic = topic if topic is not None else current.get("topic")
+        merged_topic = None if "topic" in clear else (topic if topic is not None else current.get("topic"))
         updates.update(
             question=merged_question,
             tags=merged_tags or [],

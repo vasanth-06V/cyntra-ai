@@ -1,6 +1,123 @@
 {
  "components": {
   "schemas": {
+   "AtsHistoryDetailOut": {
+    "properties": {
+     "composite_score": {
+      "title": "Composite Score",
+      "type": "integer"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "jd_excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jd Excerpt"
+     },
+     "job_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Title"
+     },
+     "provider": {
+      "title": "Provider",
+      "type": "string"
+     },
+     "result": {
+      "title": "Result",
+      "type": "object"
+     },
+     "resume_id": {
+      "title": "Resume Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "resume_id",
+     "provider",
+     "composite_score",
+     "created_at",
+     "result"
+    ],
+    "title": "AtsHistoryDetailOut",
+    "type": "object"
+   },
+   "AtsHistoryItemOut": {
+    "properties": {
+     "composite_score": {
+      "title": "Composite Score",
+      "type": "integer"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "jd_excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Jd Excerpt"
+     },
+     "job_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Job Title"
+     },
+     "provider": {
+      "title": "Provider",
+      "type": "string"
+     },
+     "resume_id": {
+      "title": "Resume Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "resume_id",
+     "provider",
+     "composite_score",
+     "created_at"
+    ],
+    "title": "AtsHistoryItemOut",
+    "type": "object"
+   },
    "ChatMessageOut": {
     "properties": {
      "content": {
@@ -334,6 +451,44 @@
     ],
     "title": "KeySlot",
     "type": "string"
+   },
+   "PermissionsIn": {
+    "properties": {
+     "permissions": {
+      "items": {
+       "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Permissions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "permissions"
+    ],
+    "title": "PermissionsIn",
+    "type": "object"
+   },
+   "PermissionsOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "permissions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+     }
+    },
+    "required": [
+     "id",
+     "permissions"
+    ],
+    "title": "PermissionsOut",
+    "type": "object"
    },
    "ProblemOut": {
     "properties": {
@@ -786,6 +941,21 @@
     "title": "QuestionUpdateIn",
     "type": "object"
    },
+   "RenameConversationRequest": {
+    "properties": {
+     "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+     }
+    },
+    "required": [
+     "title"
+    ],
+    "title": "RenameConversationRequest",
+    "type": "object"
+   },
    "ReportOut": {
     "properties": {
      "created_at": {
@@ -885,6 +1055,41 @@
     "title": "ReportSummaryOut",
     "type": "object"
    },
+   "RoleIn": {
+    "properties": {
+     "role": {
+      "enum": [
+       "admin",
+       "user"
+      ],
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "role"
+    ],
+    "title": "RoleIn",
+    "type": "object"
+   },
+   "RoleOut": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "role": {
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "role"
+    ],
+    "title": "RoleOut",
+    "type": "object"
+   },
    "ScoreRequest": {
     "properties": {
      "jd_text": {
@@ -930,6 +1135,17 @@
      "formatting_score": {
       "title": "Formatting Score",
       "type": "number"
+     },
+     "history_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "History Id"
      },
      "keyword_score": {
       "title": "Keyword Score",
@@ -1109,6 +1325,73 @@
     "title": "SubmitTurnRequest",
     "type": "object"
    },
+   "TeamUserOut": {
+    "properties": {
+     "created_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "email": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Email"
+     },
+     "full_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Full Name"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "permissions": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Permissions",
+      "type": "array"
+     },
+     "role": {
+      "enum": [
+       "owner",
+       "admin",
+       "user"
+      ],
+      "title": "Role",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "email",
+     "full_name",
+     "role",
+     "permissions"
+    ],
+    "title": "TeamUserOut",
+    "type": "object"
+   },
    "TranscriptEntryOut": {
     "properties": {
      "created_at": {
@@ -1212,6 +1495,188 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/ats/history": {
+   "get": {
+    "description": "Past ATS results (newest first); the last 10 per resume are kept.",
+    "operationId": "history_ats_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "resume_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Resume Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 200,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/AtsHistoryItemOut"
+         },
+         "title": "Response History Ats History Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "History",
+    "tags": [
+     "ats"
+    ]
+   }
+  },
+  "/ats/history/{score_id}": {
+   "delete": {
+    "operationId": "history_delete_ats_history__score_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "score_id",
+      "required": true,
+      "schema": {
+       "title": "Score Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "History Delete",
+    "tags": [
+     "ats"
+    ]
+   },
+   "get": {
+    "operationId": "history_detail_ats_history__score_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "score_id",
+      "required": true,
+      "schema": {
+       "title": "Score Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AtsHistoryDetailOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "History Detail",
+    "tags": [
+     "ats"
+    ]
+   }
+  },
   "/ats/score": {
    "post": {
     "operationId": "score_ats_score_post",
@@ -1381,6 +1846,68 @@
      }
     },
     "summary": "Create Conversation",
+    "tags": [
+     "chat"
+    ]
+   }
+  },
+  "/chat/conversations/{conversation_id}": {
+   "patch": {
+    "operationId": "rename_conversation_chat_conversations__conversation_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "conversation_id",
+      "required": true,
+      "schema": {
+       "title": "Conversation Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenameConversationRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ConversationOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename Conversation",
     "tags": [
      "chat"
     ]
@@ -1932,6 +2459,50 @@
    }
   },
   "/interviews/{interview_id}": {
+   "delete": {
+    "description": "Delete an interview and everything attached to it.",
+    "operationId": "delete_interview_interviews__interview_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "interview_id",
+      "required": true,
+      "schema": {
+       "title": "Interview Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Interview",
+    "tags": [
+     "interviews"
+    ]
+   },
    "get": {
     "operationId": "get_interview_interviews__interview_id__get",
     "parameters": [
@@ -1978,6 +2549,59 @@
      }
     },
     "summary": "Get Interview",
+    "tags": [
+     "interviews"
+    ]
+   }
+  },
+  "/interviews/{interview_id}/abort": {
+   "post": {
+    "description": "Cancel an interview that is still being set up.",
+    "operationId": "abort_interview_interviews__interview_id__abort_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "interview_id",
+      "required": true,
+      "schema": {
+       "title": "Interview Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InterviewOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Abort Interview",
     "tags": [
      "interviews"
     ]
@@ -2747,6 +3371,177 @@
     "summary": "Get Report",
     "tags": [
      "reports"
+    ]
+   }
+  },
+  "/team/users": {
+   "get": {
+    "operationId": "list_users_team_users_get",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/TeamUserOut"
+         },
+         "title": "Response List Users Team Users Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Users",
+    "tags": [
+     "team"
+    ]
+   }
+  },
+  "/team/users/{target_id}/permissions": {
+   "put": {
+    "operationId": "set_permissions_team_users__target_id__permissions_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "target_id",
+      "required": true,
+      "schema": {
+       "title": "Target Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PermissionsIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PermissionsOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Permissions",
+    "tags": [
+     "team"
+    ]
+   }
+  },
+  "/team/users/{target_id}/role": {
+   "patch": {
+    "operationId": "set_role_team_users__target_id__role_patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "target_id",
+      "required": true,
+      "schema": {
+       "title": "Target Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RoleIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RoleOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Set Role",
+    "tags": [
+     "team"
     ]
    }
   },

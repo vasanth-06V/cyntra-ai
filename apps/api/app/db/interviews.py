@@ -55,6 +55,33 @@ async def update_interview(interview_id: str, fields: dict) -> None:
     await run(_q)
 
 
+async def update_interview_if_status(interview_id: str, fields: dict, expected_status: str) -> bool:
+    """Updates only while the interview is still in `expected_status`; False if
+    it moved on (for example the user cancelled the setup meanwhile)."""
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("interviews")
+            .update(fields)
+            .eq("id", interview_id)
+            .eq("status", expected_status)
+            .execute()
+        )
+
+    return bool((await run(_q)).data)
+
+
+async def delete_interview(user_id: str, interview_id: str) -> None:
+    """Removes the interview; transcripts, submissions and reports go with it (ON DELETE CASCADE)."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("interviews").delete().eq("id", interview_id).eq("user_id", user_id).execute()
+
+    await run(_q)
+
+
 async def list_interviews(user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
     supabase = get_supabase()
 

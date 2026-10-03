@@ -27,6 +27,7 @@ from app.keys.router import router as keys_router
 from app.llm.router import router as usage_router
 from app.reports import service as reports_service
 from app.reports.router import router as reports_router
+from app.team.router import router as team_router
 from app.rag.router import router as rag_router
 
 
@@ -79,6 +80,7 @@ app.include_router(interviews_router)
 app.include_router(jobs_router)
 app.include_router(usage_router)
 app.include_router(reports_router)
+app.include_router(team_router)
 
 install_error_handlers(app)
 

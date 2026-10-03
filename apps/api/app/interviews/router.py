@@ -58,6 +58,8 @@ async def update_question(
     return await question_bank.update_question(
         user.user_id, question_id, body.question, body.test_cases, body.tags,
         body.difficulty, body.topic, body.solution_code, body.solution_language,
+        # An explicit null clears the field; an omitted one leaves it alone.
+        clear={f for f in ("topic", "difficulty") if f in body.model_fields_set and getattr(body, f) is None},
     )
 
 
@@ -106,6 +108,18 @@ async def submit_turn(
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     return await service.submit_turn(user.user_id, interview_id, body.content)
+
+
+@router.post("/{interview_id}/abort", response_model=InterviewOut)
+async def abort_interview(interview_id: UuidStr, user: AuthenticatedUser = Depends(get_current_user)):
+    """Cancel an interview that is still being set up."""
+    return await service.abort_interview(user.user_id, interview_id)
+
+
+@router.delete("/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_interview(interview_id: UuidStr, user: AuthenticatedUser = Depends(get_current_user)):
+    """Delete an interview and everything attached to it."""
+    await service.delete_interview(user.user_id, interview_id)
 
 
 @router.post("/{interview_id}/complete", response_model=InterviewOut)

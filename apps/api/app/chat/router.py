@@ -6,6 +6,7 @@ from app.chat.models import (
     ChatMessageOut,
     ConversationOut,
     CreateConversationRequest,
+    RenameConversationRequest,
     SendMessageRequest,
 )
 from app.core.ids import UuidStr
@@ -22,6 +23,15 @@ async def create_conversation(
     body: CreateConversationRequest, user: AuthenticatedUser = Depends(get_current_user)
 ):
     return await service.create_conversation(user.user_id, body.title)
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationOut)
+async def rename_conversation(
+    conversation_id: UuidStr,
+    body: RenameConversationRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    return await service.rename_conversation(user.user_id, conversation_id, body.title)
 
 
 @router.get("/conversations", response_model=list[ConversationOut])

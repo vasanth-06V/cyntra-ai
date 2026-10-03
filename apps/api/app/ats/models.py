@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.core.ids import UuidStr
@@ -30,3 +32,18 @@ class ScoreResponse(BaseModel):
     missing_must_have: list[str]
     missing_nice_to_have: list[str]
     coverage: list[CoverageOut] = []
+    history_id: str | None = None  # the saved copy (the last 10 per resume are kept)
+
+
+class AtsHistoryItemOut(BaseModel):
+    id: str
+    resume_id: str
+    job_title: str | None = None
+    jd_excerpt: str | None = None
+    provider: str
+    composite_score: int
+    created_at: datetime
+
+
+class AtsHistoryDetailOut(AtsHistoryItemOut):
+    result: dict

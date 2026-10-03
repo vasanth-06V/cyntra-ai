@@ -69,6 +69,11 @@ async def test_start_interview_creates_in_progress_interview_with_opening_messag
 
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
+    async def _if_setting_up(iid, fields, _f=fake_update):
+        await _f(iid, fields)
+        return True
+
+    monkeypatch.setattr(service, "_update_interview_if_setting_up", _if_setting_up)
     monkeypatch.setattr(service, "_append_transcript", fake_append)
     monkeypatch.setattr(service, "_get_owned_interview", fake_get_owned)
     monkeypatch.setattr(service.gateway, "complete_full", fake_complete_text)
@@ -100,6 +105,11 @@ async def test_start_interview_marks_aborted_on_failure(monkeypatch):
 
     monkeypatch.setattr(service, "_create_interview_row", fake_create_row)
     monkeypatch.setattr(service, "_update_interview", fake_update)
+    async def _if_setting_up(iid, fields, _f=fake_update):
+        await _f(iid, fields)
+        return True
+
+    monkeypatch.setattr(service, "_update_interview_if_setting_up", _if_setting_up)
     monkeypatch.setattr(service, "_append_transcript", lambda *a: _async_value(None))
     monkeypatch.setattr(service.gateway, "complete_full", fake_complete_text)
 

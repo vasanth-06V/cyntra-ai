@@ -84,6 +84,7 @@ _MIN_HISTORY_TOKENS = 700  # always room for the last interviewer turn and a ful
 # orchestration below reads naturally (and tests can replace one step).
 _get_owned_interview = interviews_repo.get_owned_interview
 _update_interview = interviews_repo.update_interview
+_update_interview_if_setting_up = lambda iid, fields: interviews_repo.update_interview_if_status(iid, fields, "setting_up")  # noqa: E731
 _append_transcript = interviews_repo.append_transcript
 _append_turns = interviews_repo.append_turns
 _recent_turns = interviews_repo.recent_turns
@@ -242,7 +243,7 @@ async def _run_setup(
     now = datetime.now(UTC)
     ends_at = now + timedelta(minutes=config.total_minutes)
 
-    await _update_interview(
+    opened = await _update_interview_if_setting_up(
         interview_id,
         {
             "status": "in_progress",
@@ -253,6 +254,10 @@ async def _run_setup(
             "brief": brief,
         },
     )
+    if not opened:
+        # The candidate cancelled the setup while it was being prepared: do not
+        # bring the interview back to life.
+        raise AppError(status.HTTP_409_CONFLICT, "setup_cancelled", "This setup was cancelled.")
     await _append_transcript(interview_id, 0, "ai", opening_message)
 
 
@@ -474,3 +479,32 @@ async def list_interviews(user_id: str, limit: int = 50, offset: int = 0) -> lis
 async def get_transcript(user_id: str, interview_id: str) -> list[dict]:
     await _get_owned_interview(user_id, interview_id)
     return await interviews_repo.transcript(interview_id)
+
+
+async def abort_interview(user_id: str, interview_id: str) -> dict:
+    """Cancels an interview that is still being set up (idempotent). A running
+    interview is ended with /complete instead."""
+    interview = await _get_owned_interview(user_id, interview_id)
+    if interview["status"] == "aborted":
+        return interview
+    if interview["status"] != "setting_up":
+        raise AppError(
+            status.HTTP_409_CONFLICT,
+            "interview_not_cancellable",
+            f"Only an interview that is still being set up can be cancelled (status: {interview['status']}).",
+        )
+    await _update_interview_if_setting_up(interview_id, {"status": "aborted"})
+    # Free the user's setup slot so they can start again at once.
+    job = await jobs_repo.active_job(user_id, SETUP_JOB)
+    if job is not None and job.get("subject_id") == interview_id:
+        await jobs_repo.mark_failed(job["id"], {"code": "cancelled", "message": "Setup cancelled.", "status": 409})
+    interview["status"] = "aborted"
+    return interview
+
+
+async def delete_interview(user_id: str, interview_id: str) -> None:
+    """Removes an interview and, with it, its transcript, submissions and report."""
+    interview = await _get_owned_interview(user_id, interview_id)
+    if interview["status"] == "setting_up":
+        await abort_interview(user_id, interview_id)
+    await interviews_repo.delete_interview(user_id, interview_id)

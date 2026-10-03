@@ -225,6 +225,11 @@ async def test_the_stored_brief_is_sanitized_and_the_jd_and_resume_are_wrapped(m
     monkeypatch.setattr(service, "_select_questions", lambda *a, **k: _value([]))
     monkeypatch.setattr(service, "_get_owned_interview", lambda *a: _value({"id": "i-1"}))
     monkeypatch.setattr(service, "_update_interview", update)
+    async def _if_setting_up(iid, fields, _f=update):
+        await _f(iid, fields)
+        return True
+
+    monkeypatch.setattr(service, "_update_interview_if_setting_up", _if_setting_up)
     monkeypatch.setattr(service, "_append_transcript", lambda *a: _value(None))
 
     async def fake_embed(user_id, texts, kind="doc"):

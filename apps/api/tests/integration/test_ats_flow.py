@@ -28,7 +28,7 @@ async def test_score_success_has_all_subscores_and_costs_expected_requests(clien
     assert r.status_code == 200
     d = r.json()
     assert set(d) == {"composite_score", "keyword_score", "semantic_score", "formatting_score",
-                      "feedback", "missing_must_have", "missing_nice_to_have", "coverage"}
+                      "feedback", "missing_must_have", "missing_nice_to_have", "coverage", "history_id"}
     assert 0 <= d["composite_score"] <= 100
     assert d["keyword_score"] > 0.5            # python + kubernetes are in the resume
     assert d["semantic_score"] > 0.5           # the resume mentions the requirements: strongly covered
