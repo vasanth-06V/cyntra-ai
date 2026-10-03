@@ -649,3 +649,8 @@ Self-review of Phase 7 found two real gaps, both fixed: (1) a review interrupted
 
 **Action**: Applied `0027_reports` on the owner's go-ahead (the table was empty, as the migration requires). Verified: columns `user_id`, `overall_score`, `interview_type` present and NOT NULL; `expires_at` default is `now() + 7 days`; one report per interview is enforced; RLS on with no policies; anon and authenticated have no privileges, service role can write. Security advisor: INFO "RLS enabled, no policy" now lists `jobs`, `code_submissions` and `interview_reports` (all intentional deny-all) plus the known leaked-password WARN.
 **Result**: all migrations through 0027 are live. The happy paths of the new functions and tables are covered by fake-DB tests; the owner's first real report is their first live run.
+
+### [2026-10-03] Phase 10 planned (no code yet)
+
+**Action**: Wrote `docs/PHASE10_PLAN.md`: 10.1 cleanup and hardening (remove Judge0 settings and unused packages, dev requirements split, `MultiFernet` key rotation, `/ready`, API Dockerfile with one worker, `render.yaml`, dependency audits); 10.2 CI gates (OpenAPI snapshot, optional real-Postgres tests on a Supabase shim); 10.3 polish (accessibility and reduced motion, key-delete, confirmations, notifications bell, delete the demo sign-up, privacy page, Playwright smoke test); 10.4 deployment runbook for Render + Vercel + Supabase redirect URLs + optional keep-warm ping, with an owner-run `check_deploy.py`; 10.5 launch checklist (rotate secrets shared during development, leaked-password toggle, owner-run quality scripts, manual end-to-end list).
+**Result**: awaiting the owner's approval and six small decisions.
