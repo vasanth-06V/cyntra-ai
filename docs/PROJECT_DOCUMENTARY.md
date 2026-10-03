@@ -600,3 +600,8 @@ Offline eval, v1 -> v2 (fake embedder): section recall on the ALL-CAPS resume 0.
 
 **Action**: Applied `0025_atomic_chat` on the owner's "complete all". Verified: function exists, executable by `service_role` only, ownership check raises P0002 for an unknown conversation; security advisor unchanged (INFO on `jobs`, known leaked-password WARN).
 **Result**: all of M4 is live (0021 atomic turns + unique grant, 0022 jobs, 0025 atomic chat). Happy paths of the three new functions are exercised only by the fake-DB tests so far; the owner's next interview setup, interview turn and chat message are their first real runs.
+
+### [2026-10-03] Phase 7 planned (no code yet)
+
+**Action**: Owner reminded that only free tiers are allowed; research: Piston's public API ended free access on 2026-02-15 (GitHub page), Judge0 has a free plan on RapidAPI/own hosting but its limits could not be confirmed. Owner chose languages C++, Python, JavaScript. Wrote `docs/PHASE7_PLAN.md`: Python/JS execute in the browser (Pyodide, Web Worker), C++ through Judge0's free plan behind an `ExecutionBackend` interface with a per-user daily cap; explicit trade-offs (hidden cases reach the browser and browser results are self-reported for Python/JS); steps 7.1 to 7.7; migration `0026_coding` to come with a go-ahead.
+**Result**: awaiting the owner's approval of the plan.
