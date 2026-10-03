@@ -127,6 +127,7 @@ async def test_turn_prompt_is_lean_single_call_and_injects_question(monkeypatch)
     monkeypatch.setattr(service, "_append_turns", lambda *a: _value(10))
     monkeypatch.setattr(service, "_recent_turns", lambda *a: _value(long_turns))
     monkeypatch.setattr(service, "_get_question_text", fake_question)
+    monkeypatch.setattr(service, "_get_review_summary", lambda *a: _value(None))
     monkeypatch.setattr(service.summarizer, "maybe_update_summary", lambda *a: _value(None))
     monkeypatch.setattr(service.gateway, "complete", fake_complete)
 

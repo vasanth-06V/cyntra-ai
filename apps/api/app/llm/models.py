@@ -34,6 +34,7 @@ MODELS: dict[str, dict[str, str]] = {
         "extract": _GEMINI,
         "summarize": _GEMINI,
         "validate": _GEMINI,
+        "judge": _GEMINI,
     },
     "claude": {
         "chat": _CLAUDE_STRONG,
@@ -42,6 +43,7 @@ MODELS: dict[str, dict[str, str]] = {
         "extract": _CLAUDE_FAST,
         "summarize": _CLAUDE_FAST,
         "validate": _CLAUDE_FAST,
+        "judge": _CLAUDE_STRONG,
     },
     "groq": {
         "chat": _GROQ_STRONG,
@@ -50,6 +52,7 @@ MODELS: dict[str, dict[str, str]] = {
         "extract": _GROQ_FAST,
         "summarize": _GROQ_FAST,
         "validate": _GROQ_FAST,
+        "judge": _GROQ_STRONG,
     },
 }
 
@@ -63,6 +66,7 @@ TIMEOUTS: dict[str, float] = {
     "extract": 30.0,
     "summarize": 30.0,
     "validate": 15.0,
+    "judge": 45.0,
 }
 DEFAULT_TIMEOUT = 30.0
 

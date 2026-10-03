@@ -66,6 +66,10 @@ class TranscriptEntryOut(BaseModel):
 class QuestionIn(BaseModel):
     type: InterviewType
     question: str = Field(min_length=1, max_length=4000)
+    # Coding-round questions carry a reference solution the reviewer compares
+    # candidates against (required for those types; never sent to candidates).
+    solution_code: str | None = Field(default=None, max_length=8000)
+    solution_language: str | None = Field(default=None, max_length=30)
     test_cases: list | None = None
     tags: list[str] | None = None
     difficulty: int | None = Field(default=None, ge=1, le=5)
@@ -74,6 +78,8 @@ class QuestionIn(BaseModel):
 
 class QuestionUpdateIn(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=4000)
+    solution_code: str | None = Field(default=None, max_length=8000)
+    solution_language: str | None = Field(default=None, max_length=30)
     test_cases: list | None = None
     tags: list[str] | None = None
     difficulty: int | None = Field(default=None, ge=1, le=5)
@@ -84,6 +90,8 @@ class QuestionOut(BaseModel):
     id: str
     type: str
     question: str
+    solution_code: str | None = None
+    solution_language: str | None = None
     test_cases: list | None
     tags: list[str] | None
     difficulty: int | None = None

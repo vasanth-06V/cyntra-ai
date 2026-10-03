@@ -71,7 +71,7 @@ async def test_create_question_denied_for_plain_user(monkeypatch, stored):
     monkeypatch.setattr(question_bank, "_is_owner_or_has_permission", lambda *a: _async_value(False))
 
     with pytest.raises(HTTPException) as exc_info:
-        await question_bank.create_question("user-1", "coding", "Reverse a linked list", None, None)
+        await question_bank.create_question("user-1", "coding", "Reverse a linked list", None, None, solution_code="def r(h): ...")
 
     assert exc_info.value.status_code == 403
 
@@ -86,7 +86,7 @@ async def test_create_question_requires_gemini_key(monkeypatch, stored):
     monkeypatch.setattr(question_bank.gateway, "embed", no_key)
 
     with pytest.raises(HTTPException) as exc_info:
-        await question_bank.create_question("owner-1", "coding", "Reverse a linked list", None, None)
+        await question_bank.create_question("owner-1", "coding", "Reverse a linked list", None, None, solution_code="def r(h): ...")
 
     assert exc_info.value.status_code == 412
 
@@ -97,7 +97,7 @@ async def test_create_question_succeeds_for_owner_and_embeds(monkeypatch, stored
     monkeypatch.setattr(questions_repo, "get_supabase", lambda: _FakeSupabase(stored))
 
     result = await question_bank.create_question(
-        "owner-1", "coding", "Reverse a linked list", [{"input": "1,2,3", "output": "3,2,1"}], ["lists"]
+        "owner-1", "coding", "Reverse a linked list", [{"input": "1,2,3", "output": "3,2,1"}], ["lists"], solution_code="def r(h): ..."
     )
 
     assert result == {"id": "question-1"}

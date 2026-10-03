@@ -323,8 +323,15 @@ def staffed(env):
     return env
 
 
-QUESTION = {"type": "coding", "question": "Two sum", "test_cases": [{"input": "1 2", "expected_output": "3"}],
-            "tags": ["arrays"]}
+TWO_SUM_SOLUTION = """def f(a, t):
+    seen = {}
+    for i, x in enumerate(a):
+        if t - x in seen:
+            return [seen[t - x], i]
+        seen[x] = i
+"""
+QUESTION = {"type": "coding", "question": "Two sum", "solution_code": TWO_SUM_SOLUTION,
+            "solution_language": "Python", "tags": ["arrays"]}
 
 
 @pytest.mark.parametrize("user,expected", [(OWNER, 201), (ADMIN_OK, 201), (ADMIN_NO, 403), (PLAIN, 403)])

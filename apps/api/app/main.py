@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.ats.router import router as ats_router
 from app.chat.router import router as chat_router
+from app.coding.router import router as coding_router
 from app.core import background
 from app.core import jobs as job_runner
 from app.db import interviews as interviews_repo
@@ -59,6 +60,7 @@ app.include_router(keys_router)
 app.include_router(chat_router)
 app.include_router(rag_router)
 app.include_router(ats_router)
+app.include_router(coding_router)
 app.include_router(interviews_router)
 app.include_router(jobs_router)
 app.include_router(usage_router)

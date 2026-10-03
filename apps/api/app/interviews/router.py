@@ -34,7 +34,7 @@ router = APIRouter(prefix="/interviews", tags=["interviews"])
 async def create_question(body: QuestionIn, user: AuthenticatedUser = Depends(get_current_user)):
     return await question_bank.create_question(
         user.user_id, body.type.value, body.question, body.test_cases, body.tags,
-        body.difficulty, body.topic,
+        body.difficulty, body.topic, body.solution_code, body.solution_language,
     )
 
 
@@ -57,7 +57,7 @@ async def update_question(
 ):
     return await question_bank.update_question(
         user.user_id, question_id, body.question, body.test_cases, body.tags,
-        body.difficulty, body.topic,
+        body.difficulty, body.topic, body.solution_code, body.solution_language,
     )
 
 

@@ -42,8 +42,9 @@ DEFAULTS: dict[str, dict] = {
         "brief": None, "summarized_through_turn": 0, "selected_question_ids": [],
         "current_question_index": 0, "provider": "gemini",
     },
-    "question_bank": {"test_cases": None, "tags": None, "created_by": None, "difficulty": None, "topic": None, "embed_version": "legacy"},
+    "question_bank": {"test_cases": None, "tags": None, "created_by": None, "difficulty": None, "topic": None, "embed_version": "legacy", "solution_code": None, "solution_language": None},
     "notifications": {"is_read": False},
+    "code_submissions": {"status": "review", "verdict": None, "summary": None},
     "jobs": {"status": "queued", "subject_id": None, "progress": None, "result": None, "error": None,
              "started_at": None, "heartbeat_at": None, "finished_at": None},
 }
@@ -197,6 +198,12 @@ class _Query:
             made = []
             for p in payloads:
                 row = {**copy.deepcopy(DEFAULTS.get(self.table, {})), **copy.deepcopy(p)}
+                if self.table == "code_submissions" and row["status"] != "failed" and any(
+                    r["interview_id"] == row["interview_id"] and r["question_id"] == row["question_id"]
+                    and r["status"] != "failed" for r in rows
+                ):  # the partial unique index code_submissions_one_per_problem
+                    raise APIError({"message": "duplicate key value violates unique constraint",
+                                    "code": "23505", "details": None, "hint": None})
                 if self.table == "jobs" and row["status"] in ("queued", "running") and any(
                     r["user_id"] == row["user_id"] and r["kind"] == row["kind"]
                     and r["status"] in ("queued", "running") for r in rows

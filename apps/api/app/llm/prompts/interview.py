@@ -51,7 +51,9 @@ SUMMARY_PROMPT = (
 )
 
 
-def context_block(brief: str, summary: str | None, boundary: str) -> str:
+def context_block(
+    brief: str, summary: str | None, boundary: str, review: str | None = None
+) -> str:
     """The brief and running summary, as data (they were distilled from
     untrusted text) -- attached to the conversation, not the system prompt."""
     from app.llm.untrusted import wrap
@@ -61,6 +63,8 @@ def context_block(brief: str, summary: str | None, boundary: str) -> str:
         parts.append(wrap("interview_brief", brief, boundary))
     if summary:
         parts.append(wrap("interview_summary", summary, boundary))
+    if review:
+        parts.append(wrap("code_review_notes", review, boundary))
     return "\n".join(parts)
 
 

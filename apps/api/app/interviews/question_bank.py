@@ -3,6 +3,7 @@ from fastapi import status
 from app.core.errors import AppError
 from app.db import questions as questions_repo
 from app.llm import gateway
+from app.interviews.types import get_config
 from app.llm.models import EMBEDDING_VERSION
 
 PERMISSION = "manage_question_bank"
@@ -49,13 +50,23 @@ async def create_question(
     tags: list[str] | None,
     difficulty: int | None = None,
     topic: str | None = None,
+    solution_code: str | None = None,
+    solution_language: str | None = None,
 ) -> dict:
     await _require_permission(user_id)
+    if get_config(interview_type).needs_coding_platform and not (solution_code or "").strip():
+        raise AppError(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "solution_required",
+            "Coding questions need a reference solution.",
+        )
     embedding = await _embed_question(user_id, embedding_text(interview_type, question, topic, tags))
     return await questions_repo.insert_question(
         {
             "type": interview_type,
             "question": question,
+            "solution_code": (solution_code or "").strip() or None,
+            "solution_language": (solution_language or "").strip() or None,
             "test_cases": test_cases,
             "tags": tags or [],
             "difficulty": difficulty,
@@ -83,10 +94,24 @@ async def update_question(
     tags: list[str] | None,
     difficulty: int | None = None,
     topic: str | None = None,
+    solution_code: str | None = None,
+    solution_language: str | None = None,
 ) -> dict:
     await _require_permission(user_id)
 
     updates: dict = {}
+    if solution_code is not None:
+        updates["solution_code"] = solution_code.strip() or None
+        if updates["solution_code"] is None:
+            current = await questions_repo.get_question(question_id)
+            if current and get_config(current["type"]).needs_coding_platform:
+                raise AppError(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    "solution_required",
+                    "Coding questions need a reference solution.",
+                )
+    if solution_language is not None:
+        updates["solution_language"] = solution_language.strip() or None
     if test_cases is not None:
         updates["test_cases"] = test_cases
     if difficulty is not None:

@@ -12,6 +12,7 @@ from app.core.errors import AppError
 from app.db import jobs as jobs_repo
 from app.db import interviews as interviews_repo
 from app.db import resumes as resumes_repo
+from app.db import submissions as submissions_repo
 from app.interviews import summarizer
 from app.interviews.orchestrator import is_final_phase, minutes_remaining, phase_for_elapsed
 from app.interviews.question_selection import select_questions
@@ -86,6 +87,7 @@ _append_turns = interviews_repo.append_turns
 _recent_turns = interviews_repo.recent_turns
 _get_question_text = interviews_repo.question_text
 _create_interview_row = interviews_repo.create_interview
+_get_review_summary = submissions_repo.done_summary
 
 
 async def _get_owned_processed_resume(user_id: str, resume_id: str) -> dict:
@@ -351,6 +353,7 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         interview["phase"] = current_phase
 
     question_block = ""
+    review_note = ""
     question_ids = interview.get("selected_question_ids") or []
     # Only while a problem is actually being worked on -- not during the intro
     # (which would reveal it early) or the wrap-up.
@@ -364,6 +367,14 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
         if question_text:
             question_block = (
                 f"\nCurrent question: {truncate(question_text, _QUESTION_TOKEN_CAP)}"
+            )
+        # After a submission the reviewer's short assessment steers follow-ups;
+        # the reference solution itself never enters this prompt.
+        submitted = await _get_review_summary(interview_id, question_ids[index])
+        if submitted and submitted.get("summary"):
+            review_note = (
+                f"The candidate submitted {submitted['language']} code. "
+                f"Reviewer's assessment: {submitted['summary']}"
             )
 
     brief = interview.get("brief") or truncate(interview.get("jd_text") or "", _JD_FALLBACK_TOKENS)
@@ -396,7 +407,7 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
 
     # Brief + running summary ride along as data in the conversation, and the
     # window is trimmed to leave room for them.
-    context = context_block(brief, interview.get("running_summary"), boundary)
+    context = context_block(brief, interview.get("running_summary"), boundary, review_note)
     messages = fit_to_budget(
         messages, _PROMPT_BUDGET_TOKENS - estimate_tokens(context), keep_leading=leading
     )
