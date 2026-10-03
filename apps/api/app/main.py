@@ -17,6 +17,8 @@ from app.core.jsonlog import setup_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import AuthenticatedUser, get_current_user
 from app.interviews.router import router as interviews_router
+from app.coding.service import REVIEW_JOB
+from app.db import submissions as submissions_repo
 from app.interviews.service import SETUP_JOB
 from app.jobs.router import router as jobs_router
 from app.keys.router import router as keys_router
@@ -35,6 +37,9 @@ async def _recover_jobs() -> None:
         for job in await job_runner.recover_interrupted():
             if job.get("kind") == SETUP_JOB and job.get("subject_id"):
                 await interviews_repo.update_interview(job["subject_id"], {"status": "aborted"})
+            elif job.get("kind") == REVIEW_JOB and job.get("subject_id"):
+                # An interrupted review must not use up the candidate's single submit.
+                await submissions_repo.mark_failed(job["subject_id"])
     except Exception:
         logging.getLogger(__name__).warning("Could not recover interrupted jobs", exc_info=True)
 

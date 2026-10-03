@@ -88,6 +88,7 @@ export function CodeEditorPanel({
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const loadedKey = useRef<string | null>(null);
+  const polling = useRef(false); // one review poll at a time
 
   useEffect(() => {
     mounted.current = true;
@@ -146,6 +147,8 @@ export function CodeEditorPanel({
 
   const pollReview = useCallback(
     async (jobId: string) => {
+      if (polling.current) return;
+      polling.current = true;
       setReviewing(true);
       onBusyChange(true);
       setError(null);
@@ -175,6 +178,7 @@ export function CodeEditorPanel({
           setError(err instanceof ApiError ? err.message : "Could not review your solution.");
         }
       } finally {
+        polling.current = false;
         if (mounted.current) {
           setReviewing(false);
           setProgress(null);

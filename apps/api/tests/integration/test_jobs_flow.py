@@ -185,3 +185,16 @@ async def test_an_unexpected_crash_is_reported_generically_without_leaking_detai
     row = env.db.rows("jobs", id=job["id"])[0]
     assert row["status"] == "failed" and row["error"]["code"] == "internal_error"
     assert "secret" not in row["error"]["message"]
+
+
+async def test_startup_recovery_frees_the_submit_of_an_interrupted_code_review(env):
+    resume = seed_processed_resume(env, USER_A)
+    interview = env.db.seed("interviews", user_id=USER_A, type="coding", jd_text="x", resume_id=resume["id"], status="in_progress")
+    question = env.db.seed("question_bank", type="coding", question="q", embedding=[0.1])
+    sub = env.db.seed("code_submissions", interview_id=interview["id"], user_id=USER_A,
+                      question_id=question["id"], language="Python", code="x = 1", line_count=1)
+    env.db.seed("jobs", user_id=USER_A, kind="code_review", status="running", subject_id=sub["id"])
+
+    await _recover_jobs()
+
+    assert env.db.rows("code_submissions", id=sub["id"])[0]["status"] == "failed"  # they can submit again
