@@ -605,3 +605,8 @@ Offline eval, v1 -> v2 (fake embedder): section recall on the ALL-CAPS resume 0.
 
 **Action**: Owner reminded that only free tiers are allowed; research: Piston's public API ended free access on 2026-02-15 (GitHub page), Judge0 has a free plan on RapidAPI/own hosting but its limits could not be confirmed. Owner chose languages C++, Python, JavaScript. Wrote `docs/PHASE7_PLAN.md`: Python/JS execute in the browser (Pyodide, Web Worker), C++ through Judge0's free plan behind an `ExecutionBackend` interface with a per-user daily cap; explicit trade-offs (hidden cases reach the browser and browser results are self-reported for Python/JS); steps 7.1 to 7.7; migration `0026_coding` to come with a go-ahead.
 **Result**: awaiting the owner's approval of the plan.
+
+### [2026-10-03] Phase 7 redesigned (rev 2): no code execution
+
+**Action**: Owner decided hidden tests and running code are unnecessary: the question bank holds a question and a reference solution; the candidate submits code (any language, one submit per problem) and the interviewer judges it by logic; LLM calls must be minimal. `docs/PHASE7_PLAN.md` rewritten: Judge0, Pyodide, workers and daily caps are gone; one structured LLM call per submit produces both the hidden verdict (with required evidence) and the interviewer's visible reaction; reference solution never reaches the turn prompt or the browser and replies are leak-filtered against it; code is untrusted data; failed reviews do not consume the single submit; owner-run `judge_eval_live.py` to measure judging accuracy.
+**Result**: awaiting approval; no code written.
