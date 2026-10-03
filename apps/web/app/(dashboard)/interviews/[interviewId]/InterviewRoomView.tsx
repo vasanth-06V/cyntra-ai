@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Button } from "@/components/ui/Button";
 import { MessageBubble } from "@/components/chat/MessageBubble";
+import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
 import { PhaseTimer } from "@/components/interview/PhaseTimer";
 import type { ChatMessage } from "@/types/chat";
 import type { Interview, TranscriptEntry, TurnResponse } from "@/types/interviews";
@@ -30,6 +31,19 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // The coding editor appears beside the chat while a problem is active; the
+  // chat pauses while a submitted solution is being reviewed.
+  const [codeActive, setCodeActive] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+
+  const reloadTranscript = useCallback(() => {
+    apiClient
+      .get<TranscriptEntry[]>(`/interviews/${interviewId}/transcript`)
+      .then((transcript) => setMessages(transcript.map(toChatMessage)))
+      .catch(() => {
+        // the next turn reloads it anyway
+      });
+  }, [interviewId]);
 
   useEffect(() => {
     Promise.all([
@@ -76,7 +90,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const content = input.trim();
-    if (!content || sending || interview?.status !== "in_progress") return;
+    if (!content || sending || reviewing || interview?.status !== "in_progress") return;
 
     const localId = `local-${Date.now()}`;
     setInput("");
@@ -137,6 +151,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         )}
       </div>
 
+      <div className={`flex min-h-0 flex-1 flex-col ${codeActive ? "lg:grid lg:grid-cols-2" : ""}`}>
+      <div className="flex min-h-0 flex-1 flex-col">
       <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
@@ -152,10 +168,10 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
             placeholder="Your answer…"
             aria-label="Your answer"
             maxLength={4000}
-            disabled={sending}
+            disabled={sending || reviewing}
             className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
-          <Button type="submit" disabled={sending || !input.trim()}>
+          <Button type="submit" disabled={sending || reviewing || !input.trim()}>
             {sending ? "Thinking…" : "Send"}
           </Button>
         </form>
@@ -167,6 +183,18 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           <Button onClick={() => router.push("/interviews")}>Back to interviews</Button>
         </div>
       )}
+      </div>
+
+      {isActive && (
+        <CodeEditorPanel
+          interviewId={interviewId}
+          refreshKey={`${phase}:${messages.length}`}
+          onBusyChange={setReviewing}
+          onReviewed={reloadTranscript}
+          onProblemChange={setCodeActive}
+        />
+      )}
+      </div>
 
       {sendError && (
         <p role="alert" className="px-4 pb-3 text-sm text-destructive">

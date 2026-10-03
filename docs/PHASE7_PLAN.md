@@ -1,6 +1,6 @@
 # Phase 7 — Coding round (plan, rev 2, for approval)
 
-Status: **DRAFT rev 2, 2026-10-03, awaiting the owner's approval.** Nothing below is built yet.
+Status: **APPROVED 2026-10-03 (rev 2). Built and committed; migration `0026_coding` awaits the owner's go-ahead; the owner-run accuracy script and starter loader are ready.**
 Rev 1 (Judge0 / in-browser execution) is **withdrawn**. Owner decisions: free tier only; **no code execution at all**; no test cases; the question bank holds a question and a reference solution; any language; **one submit per problem**; keep LLM calls minimal.
 
 ## 1. What it is

@@ -56,6 +56,8 @@ export type Question = {
   id: string;
   type: InterviewType;
   question: string;
+  solution_code: string | null;
+  solution_language: string | null;
   test_cases: QuestionTestCase[] | null;
   tags: string[] | null;
   difficulty: number | null;

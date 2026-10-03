@@ -10,6 +10,8 @@ import {
   type Question,
 } from "@/types/interviews";
 
+const CODING_TYPES: InterviewType[] = ["coding", "webd", "sde"];
+
 const INTERVIEW_TYPES = Object.keys(INTERVIEW_TYPE_LABELS) as InterviewType[];
 
 export function QuestionBankView() {
@@ -24,7 +26,8 @@ export function QuestionBankView() {
   const [tagsText, setTagsText] = useState("");
   const [topicText, setTopicText] = useState("");
   const [difficulty, setDifficulty] = useState<string>("");
-  const [testCasesText, setTestCasesText] = useState("");
+  const [solutionCode, setSolutionCode] = useState("");
+  const [solutionLanguage, setSolutionLanguage] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -59,7 +62,8 @@ export function QuestionBankView() {
     setTagsText("");
     setTopicText("");
     setDifficulty("");
-    setTestCasesText("");
+    setSolutionCode("");
+    setSolutionLanguage("");
     setFormError(null);
   }
 
@@ -70,23 +74,18 @@ export function QuestionBankView() {
     setTagsText((q.tags ?? []).join(", "));
     setTopicText(q.topic ?? "");
     setDifficulty(q.difficulty ? String(q.difficulty) : "");
-    setTestCasesText(q.test_cases ? JSON.stringify(q.test_cases, null, 2) : "");
+    setSolutionCode(q.solution_code ?? "");
+    setSolutionLanguage(q.solution_language ?? "");
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
 
-    let testCases = null;
-    if (testCasesText.trim()) {
-      try {
-        testCases = JSON.parse(testCasesText);
-      } catch {
-        setFormError(
-          'Test cases must be valid JSON, e.g. [{"input": "...", "output": "..."}]'
-        );
-        return;
-      }
+    const needsSolution = CODING_TYPES.includes(type);
+    if (needsSolution && !solutionCode.trim()) {
+      setFormError("Coding questions need a reference solution (the interviewer judges against it).");
+      return;
     }
 
     const tags = tagsText
@@ -99,7 +98,8 @@ export function QuestionBankView() {
       if (editingId) {
         await apiClient.patch(`/interviews/question-bank/${editingId}`, {
           question: questionText,
-          test_cases: testCases,
+          solution_code: solutionCode,
+          solution_language: solutionLanguage.trim(),
           tags,
           topic: topicText.trim() || undefined,
           difficulty: difficulty ? Number(difficulty) : undefined,
@@ -108,7 +108,8 @@ export function QuestionBankView() {
         await apiClient.post("/interviews/question-bank", {
           type,
           question: questionText,
-          test_cases: testCases,
+          solution_code: solutionCode || undefined,
+          solution_language: solutionLanguage.trim() || undefined,
           tags,
           topic: topicText.trim() || undefined,
           difficulty: difficulty ? Number(difficulty) : undefined,
@@ -204,13 +205,32 @@ export function QuestionBankView() {
             </select>
           </div>
 
-          <textarea
-            value={testCasesText}
-            onChange={(e) => setTestCasesText(e.target.value)}
-            placeholder='Test cases as JSON (optional), e.g. [{"input": "1,2", "output": "3"}]'
-            rows={4}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
-          />
+          {CODING_TYPES.includes(type) && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-muted-foreground" htmlFor="solution-code">
+                Reference solution (required for coding questions). The interviewer compares each
+                candidate&apos;s submission against it; candidates never see it.
+              </label>
+              <textarea
+                id="solution-code"
+                value={solutionCode}
+                onChange={(e) => setSolutionCode(e.target.value)}
+                placeholder="Paste a correct, ideally optimal, solution…"
+                rows={8}
+                maxLength={8000}
+                spellCheck={false}
+                className="rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
+              />
+              <input
+                value={solutionLanguage}
+                onChange={(e) => setSolutionLanguage(e.target.value)}
+                placeholder="Language of the solution, e.g. Python"
+                aria-label="Solution language"
+                maxLength={30}
+                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          )}
 
           {formError && <p className="text-sm text-destructive">{formError}</p>}
 

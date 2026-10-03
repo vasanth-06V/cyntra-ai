@@ -84,7 +84,7 @@ A **single-tenant AI platform** with three services under one account system, ru
 | Interview room UI (transcript, phase/timer, send answer, end interview) | 🟡 |
 | Question bank admin (Owner/Admins with permission): create/edit/delete with test cases and tags, embedded on save | 🟡 |
 | Polished ~5-minute "setting up" screen with progress messages and 3D scene | 🔜 (currently synchronous + static scene) |
-| **Coding platform** (Monaco editor + Judge0 test-case execution, 2 RAG-selected questions) | 🔜 Phase 7 |
+| **Coding round** (Monaco editor beside the chat; any language; one submit per problem; the interviewer reviews the logic against the question bank's reference solution; nothing is executed) | ✅ built, awaiting migration 0026 and live check |
 | **Voice** (AI speaks via TTS, live STT transcript, silence/interruption handling) — "the heart of the product" | 🔜 Phase 8 |
 | **Post-interview report**, downloadable for exactly 7 days then purged | 🔜 Phase 9 |
 | Untimed practice mode | ⏸ deferred |
