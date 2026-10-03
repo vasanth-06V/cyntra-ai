@@ -2,7 +2,7 @@ import logging
 import time
 
 import httpx
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from fastapi import Header, HTTPException, status
 from jose import JWTError, jwt
 
@@ -11,8 +11,15 @@ from app.core.context import set_user_id
 from app.core.errors import AppError
 
 
-def _fernet() -> Fernet:
-    return Fernet(settings.key_encryption_secret)
+def _fernet() -> MultiFernet:
+    """Encrypts with the first configured key, decrypts with any of them."""
+    return MultiFernet([Fernet(k) for k in settings.encryption_keys])
+
+
+def reencrypt_key(encrypted_key: str) -> str:
+    """The same secret, encrypted under the current (first) key. Raises
+    InvalidToken if none of the configured keys can read it."""
+    return _fernet().rotate(encrypted_key.encode()).decode()
 
 
 def encrypt_key(raw_key: str) -> str:

@@ -203,3 +203,16 @@ async def test_token_without_expiry_rejected(raw_client):
     token = jwt.encode({"sub": USER_A, "aud": "authenticated"}, SECRET, algorithm="HS256")
     r = await raw_client.get("/health/authenticated", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 401
+
+
+async def test_ready_checks_the_database_and_health_does_not(client, env):
+    assert (await client.get("/health")).json() == {"status": "ok"}
+    ok = await client.get("/ready")
+    assert ok.status_code == 200 and ok.json() == {"status": "ready"}
+
+    from postgrest.exceptions import APIError
+
+    env.db.fail_on[("profiles", "select")] = APIError({"message": "connection refused to db.internal:5432", "code": "XX000"})
+    down = await client.get("/ready")
+    assert down.status_code == 503 and down.json() == {"status": "unavailable"}  # says nothing about why
+    assert (await client.get("/health")).status_code == 200  # the platform check does not flap

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_jwt_secret: str = ""
 
+    # One Fernet key, or several separated by commas: the FIRST encrypts new
+    # keys, every one can decrypt. To rotate: put the new key first, keep the
+    # old one after it, run scripts/rotate_keys.py --apply, then drop the old one.
     key_encryption_secret: str = ""
 
     # Any S3-compatible object store (Supabase Storage, Cloudflare R2, B2, ...).
@@ -25,12 +28,13 @@ class Settings(BaseSettings):
     storage_secret_access_key: str = ""
     storage_bucket_name: str = ""
 
-    judge0_api_url: str = ""
-    judge0_api_key: str = ""
-
     environment: str = "development"
     # Comma-separated list of browser origins allowed to call the API.
     cors_origins: str = "http://localhost:3000"
+
+    @property
+    def encryption_keys(self) -> list[str]:
+        return [k.strip() for k in self.key_encryption_secret.split(",") if k.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -57,11 +61,15 @@ def config_problems(cfg: Settings) -> list[str]:
         try:
             from cryptography.fernet import Fernet
 
-            Fernet(cfg.key_encryption_secret)
+            keys = cfg.encryption_keys
+            if not keys:
+                raise ValueError("no key")
+            for key in keys:
+                Fernet(key)
         except Exception:
             problems.append(
                 "KEY_ENCRYPTION_SECRET is not a valid Fernet key "
-                "(generate one with Fernet.generate_key())"
+                "(generate one with Fernet.generate_key(); several may be comma-separated)"
             )
 
     if cfg.is_production:

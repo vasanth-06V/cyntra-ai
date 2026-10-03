@@ -93,3 +93,15 @@ def test_health_does_not_leak_the_environment():
     from app.main import app
 
     assert TestClient(app).get("/health").json() == {"status": "ok"}
+
+
+def test_several_comma_separated_encryption_keys_are_accepted_but_each_must_be_valid():
+    from cryptography.fernet import Fernet
+
+    from app.core.config import config_problems
+
+    a, b = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    assert config_problems(_settings(key_encryption_secret=f"{a},{b}")) == []
+    assert config_problems(_settings(key_encryption_secret=f" {a} , {b} ")) == []
+    assert any("Fernet" in p for p in config_problems(_settings(key_encryption_secret=f"{a},oops")))
+    assert any("Fernet" in p for p in config_problems(_settings(key_encryption_secret=",")))

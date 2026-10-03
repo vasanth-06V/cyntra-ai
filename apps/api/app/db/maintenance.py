@@ -61,3 +61,21 @@ async def set_question_embedding(question_id: str, embedding: list[float], versi
         )
 
     await run(_q)
+
+
+async def all_encrypted_keys() -> list[dict]:
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("provider_keys").select("id, encrypted_key").execute()
+
+    return (await run(_q)).data or []
+
+
+async def set_encrypted_key(key_id: str, encrypted: str) -> None:
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("provider_keys").update({"encrypted_key": encrypted}).eq("id", key_id).execute()
+
+    await run(_q)

@@ -116,3 +116,28 @@ async def test_rejects_garbage_token():
         await security._decode_supabase_jwt("not.a.jwt")
 
     assert exc_info.value.status_code == 401
+
+
+def test_key_rotation_new_key_first_old_key_still_reads(monkeypatch):
+    from cryptography.fernet import Fernet, InvalidToken
+    import pytest
+
+    from app.core import security
+    from app.core.config import settings
+
+    old, new = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "key_encryption_secret", old)
+    stored = security.encrypt_key("sk-secret")
+
+    monkeypatch.setattr(settings, "key_encryption_secret", f"{new},{old}")  # rotation window
+    assert security.decrypt_key(stored) == "sk-secret"  # an old row still reads
+    fresh = security.reencrypt_key(stored)
+    assert fresh != stored
+
+    monkeypatch.setattr(settings, "key_encryption_secret", new)  # old key dropped
+    assert security.decrypt_key(fresh) == "sk-secret"  # the re-encrypted row survives
+    with pytest.raises(Exception) as err:
+        security.decrypt_key(stored)  # the un-rotated row no longer reads: clear 412, not a crash
+    assert getattr(err.value, "status_code", None) == 412
+    with pytest.raises(InvalidToken):
+        security.reencrypt_key(stored)

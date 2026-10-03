@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.ats.router import router as ats_router
@@ -11,6 +12,7 @@ from app.coding.router import router as coding_router
 from app.core import background
 from app.core import jobs as job_runner
 from app.db import interviews as interviews_repo
+from app.db import readiness
 from app.core.config import settings, validate_config
 from app.core.errors import install_error_handlers
 from app.core.jsonlog import setup_logging
@@ -92,6 +94,20 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
 )
+
+
+@app.get("/ready")
+async def ready():
+    """Is the API able to do real work (can it reach the database)? /health
+    stays dependency-free so a platform health check never flaps with the
+    database; this one is for humans and deploy scripts. Says nothing about
+    why it failed."""
+    try:
+        await readiness.database_reachable()
+    except Exception:
+        logging.getLogger(__name__).warning("Readiness check failed", exc_info=True)
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ready"}
 
 
 @app.get("/health")
