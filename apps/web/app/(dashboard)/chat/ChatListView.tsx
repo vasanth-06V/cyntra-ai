@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { createClient } from "@/lib/supabase/client";
@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { InlineRename } from "@/components/ui/InlineRename";
 import { ListRow } from "@/components/ui/ListRow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { ChatIcon, PlusIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
+import { ChatIcon, PencilIcon, PlusIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
+import { MAX_CHAT_TITLE_LENGTH, validateChatTitle } from "@/lib/chat";
 import type { Conversation } from "@/types/chat";
 
 const PAGE_SIZE = 50;
@@ -28,6 +30,8 @@ export function ChatListView() {
   const [attempt, setAttempt] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const renameOpener = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     apiClient
@@ -92,6 +96,16 @@ export function ChatListView() {
     if (error) throw new Error("Could not delete this conversation. Please try again.");
     if (!data || data.length === 0) throw new Error("That conversation no longer exists. Refresh the list.");
     setConversations((prev) => prev.filter((x) => x.id !== c.id));
+  }
+
+  async function renameConversation(c: Conversation, value: string) {
+    try {
+      const updated = await apiClient.patch<Conversation>(`/chat/conversations/${c.id}`, { title: value.trim() });
+      setConversations((prev) => prev.map((x) => (x.id === c.id ? { ...x, title: updated?.title ?? value.trim() } : x)));
+      toast({ tone: "success", title: "Chat renamed" });
+    } catch (err) {
+      throw new Error(err instanceof ApiError ? err.message : "Could not rename this chat.");
+    }
   }
 
   async function handleDelete(c: Conversation) {
@@ -164,7 +178,37 @@ export function ChatListView() {
                 href={`/chat/${c.id}`}
                 title={c.title || "Untitled conversation"}
                 meta={new Date(c.created_at).toLocaleString()}
+                editor={
+                  renamingId === c.id ? (
+                    <InlineRename
+                      initialValue={c.title ?? ""}
+                      label={`New title for ${c.title || "Untitled conversation"}`}
+                      placeholder="Chat title"
+                      maxLength={MAX_CHAT_TITLE_LENGTH}
+                      validate={validateChatTitle}
+                      onSave={(v) => renameConversation(c, v)}
+                      onClose={() => {
+                        setRenamingId(null);
+                        setTimeout(() => renameOpener.current?.focus(), 0);
+                      }}
+                    />
+                  ) : undefined
+                }
                 actions={
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        renameOpener.current = e.currentTarget;
+                        setRenamingId(c.id);
+                      }}
+                      aria-label={`Rename conversation ${c.title || "Untitled conversation"}`}
+                      className="text-muted-foreground"
+                    >
+                      <PencilIcon size={14} />
+                    </Button>
                   <Button
                     type="button"
                     variant="ghost"
@@ -175,6 +219,7 @@ export function ChatListView() {
                   >
                     <TrashIcon size={14} />
                   </Button>
+                  </>
                 }
               />
             </li>

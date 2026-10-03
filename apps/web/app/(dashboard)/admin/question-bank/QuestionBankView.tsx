@@ -116,8 +116,9 @@ export function QuestionBankView() {
           solution_code: solutionCode,
           solution_language: solutionLanguage.trim(),
           tags,
-          topic: topicText.trim() || undefined,
-          difficulty: difficulty ? Number(difficulty) : undefined,
+          // On an edit an explicit null clears the field (omitting it would leave it unchanged).
+          topic: topicText.trim() || null,
+          difficulty: difficulty ? Number(difficulty) : null,
         });
       } else {
         await apiClient.post("/interviews/question-bank", {
@@ -278,7 +279,7 @@ export function QuestionBankView() {
 
           {editingId && (
             <p className="text-xs text-muted-foreground">
-              Topic and difficulty can be changed here but not cleared once saved.
+              Leave the topic empty or the difficulty blank to clear them.
             </p>
           )}
 

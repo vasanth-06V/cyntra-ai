@@ -9,6 +9,10 @@ const state = vi.hoisted(() => ({
   deleted: [{ id: "r1" }] as { id: string }[] | null,
   deleteError: null as { message: string } | null,
   insertError: null as { message: string } | null,
+  updated: [{ id: "r1", display_name: "My CV" }] as { id: string; display_name: string | null }[] | null,
+  updateError: null as { message: string } | null,
+  updateValues: null as Record<string, unknown> | null,
+  updateFilters: [] as [string, unknown][],
 }));
 const upload = vi.hoisted(() => vi.fn());
 const removeObject = vi.hoisted(() => vi.fn());
@@ -36,6 +40,21 @@ vi.mock("@/lib/supabase/server", () => ({
           single: async () => ({ data: state.insertError ? null : { id: "new" }, error: state.insertError }),
         }),
       }),
+      update: (values: Record<string, unknown>) => {
+        state.updateValues = values;
+        state.updateFilters = [];
+        const chain = {
+          eq: (col: string, val: unknown) => {
+            state.updateFilters.push([col, val]);
+            return chain;
+          },
+          select: async () => ({
+            data: state.updated && state.updated.length ? [{ id: "r1", display_name: values.display_name }] : state.updated,
+            error: state.updateError,
+          }),
+        };
+        return chain;
+      },
       delete: () => {
         const chain = {
           eq: () => chain,
@@ -48,7 +67,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { POST } from "./route";
-import { DELETE } from "./[id]/route";
+import { DELETE, PATCH } from "./[id]/route";
 
 function uploadRequest(name = "cv.pdf", content = "%PDF-1.4 hello") {
   const form = new FormData();
@@ -63,6 +82,10 @@ beforeEach(() => {
   state.deleted = [{ id: "r1" }];
   state.deleteError = null;
   state.insertError = null;
+  state.updated = [{ id: "r1", display_name: "My CV" }];
+  state.updateError = null;
+  state.updateValues = null;
+  state.updateFilters = [];
   upload.mockReset().mockResolvedValue("key");
   removeObject.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
@@ -95,6 +118,88 @@ describe("POST /api/resumes", () => {
   it("requires a signed-in user", async () => {
     state.user = null;
     expect((await POST(uploadRequest())).status).toBe(401);
+  });
+
+  it("maps the database resume_limit trigger error to the same 409 and cleans up the stored file", async () => {
+    // The pre-check passed (a race, or the limit changed), but the trigger refuses the insert.
+    state.insertError = { message: "resume_limit: a user may keep at most 3 resumes" };
+    const res = await POST(uploadRequest());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe("resume_limit");
+    expect(body.error).toMatch(/up to 3 resumes/);
+    expect(removeObject).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reports other insert errors as 500", async () => {
+    state.insertError = { message: "something else" };
+    const res = await POST(uploadRequest());
+    expect(res.status).toBe(500);
+    expect((await res.json()).code).toBeUndefined();
+  });
+});
+
+describe("PATCH /api/resumes/:id (rename)", () => {
+  const call = (body: unknown, raw?: string) =>
+    PATCH(
+      new Request("http://localhost/api/resumes/r1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: raw ?? JSON.stringify(body),
+      }),
+      { params: Promise.resolve({ id: "r1" }) }
+    );
+
+  it("trims the name, scopes the update to the owner and returns the row", async () => {
+    const res = await call({ display_name: "  My CV  " });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: "r1", display_name: "My CV" });
+    expect(state.updateValues).toEqual({ display_name: "My CV" });
+    expect(state.updateFilters).toEqual([
+      ["id", "r1"],
+      ["user_id", "u1"],
+    ]);
+  });
+
+  it("turns an empty or blank name, and null, into null", async () => {
+    for (const display_name of ["", "   ", null]) {
+      state.updateValues = null;
+      expect((await call({ display_name })).status).toBe(200);
+      expect(state.updateValues).toEqual({ display_name: null });
+    }
+  });
+
+  it("accepts exactly 80 characters and rejects 81 with a 400", async () => {
+    expect((await call({ display_name: "a".repeat(80) })).status).toBe(200);
+    state.updateValues = null;
+    const res = await call({ display_name: "a".repeat(81) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/80/);
+    expect(state.updateValues).toBeNull();
+  });
+
+  it("rejects a non-text name and an unreadable body", async () => {
+    expect((await call({ display_name: 5 })).status).toBe(400);
+    expect((await call({})).status).toBe(400);
+    expect((await call(null, "not json")).status).toBe(400);
+  });
+
+  it("requires a signed-in user", async () => {
+    state.user = null;
+    expect((await call({ display_name: "x" })).status).toBe(401);
+    expect(state.updateValues).toBeNull();
+  });
+
+  it("is a 404 when no row matched (not yours, or gone)", async () => {
+    state.updated = [];
+    expect((await call({ display_name: "x" })).status).toBe(404);
+  });
+
+  it("reports a database error as 500", async () => {
+    state.updateError = { message: "permission denied for column" };
+    const res = await call({ display_name: "x" });
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toMatch(/permission denied/);
   });
 });
 

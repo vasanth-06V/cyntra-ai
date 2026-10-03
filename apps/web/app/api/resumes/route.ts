@@ -15,6 +15,16 @@ const CONTENT_TYPES: Record<string, string> = {
 // _MAX_FILE_BYTES in api/app/rag/service.py and the UI hint in ResumesView.
 const MAX_FILE_SIZE_BYTES = 500 * 1024; // 500KB
 
+function resumeLimitResponse() {
+  return NextResponse.json(
+    {
+      error: `You can keep up to ${MAX_RESUMES} resumes. Delete one to upload another.`,
+      code: "resume_limit",
+    },
+    { status: 409 }
+  );
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -35,13 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: countError.message }, { status: 500 });
   }
   if ((count ?? 0) >= MAX_RESUMES) {
-    return NextResponse.json(
-      {
-        error: `You can keep up to ${MAX_RESUMES} resumes. Delete one to upload another.`,
-        code: "resume_limit",
-      },
-      { status: 409 }
-    );
+    return resumeLimitResponse();
   }
 
   let formData: FormData;
@@ -100,6 +104,11 @@ export async function POST(request: Request) {
   if (insertError) {
     // Don't leave an orphaned object behind.
     await deleteFromStorage(fileKey).catch(() => {});
+    // The database trigger is the real limit (the pre-check above can race, and
+    // direct API inserts skip this handler): report it the same way.
+    if (insertError.message?.includes("resume_limit")) {
+      return resumeLimitResponse();
+    }
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
@@ -142,7 +151,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("resumes")
-    .select("id, file_key, parsed_text, created_at")
+    .select("id, file_key, parsed_text, display_name, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 

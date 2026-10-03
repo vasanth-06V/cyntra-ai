@@ -5,12 +5,14 @@ import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/Toast";
 import { LinkButton } from "@/components/ui/LinkButton";
 import { ListRow } from "@/components/ui/ListRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
-import { ChevronRightIcon, MicIcon, PlusIcon, RefreshIcon } from "@/components/ui/icons";
+import { MicIcon, PlusIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
 import { INTERVIEW_TYPE_LABELS, type Interview, type InterviewStatus } from "@/types/interviews";
 
 const STATUS_TONE: Record<InterviewStatus, Tone> = {
@@ -23,6 +25,8 @@ const STATUS_TONE: Record<InterviewStatus, Tone> = {
 const PAGE_SIZE = 50;
 
 export function InterviewsView() {
+  const confirm = useConfirm();
+  const { toast } = useToast();
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +60,35 @@ export function InterviewsView() {
     } finally {
       setLoadingMore(false);
     }
+  }
+
+  async function deleteInterview(iv: Interview) {
+    try {
+      await apiClient.delete(`/interviews/${iv.id}`);
+    } catch (err) {
+      throw new Error(err instanceof ApiError ? err.message : "Could not delete this interview.");
+    }
+    setInterviews((prev) => prev.filter((x) => x.id !== iv.id));
+  }
+
+  async function handleDelete(iv: Interview) {
+    const label = INTERVIEW_TYPE_LABELS[iv.type] ?? iv.type;
+    const when = new Date(iv.created_at).toLocaleString();
+    const ok = await confirm({
+      title: "Delete this interview?",
+      description: (
+        <>
+          <span className="font-medium text-foreground">
+            {label}, {when}
+          </span>
+          : the transcript, any submitted code and the report are removed too. This can&apos;t be undone.
+        </>
+      ),
+      confirmLabel: "Delete interview",
+      tone: "danger",
+      onConfirm: () => deleteInterview(iv),
+    });
+    if (ok) toast({ tone: "success", title: "Interview deleted" });
   }
 
   return (
@@ -109,15 +142,21 @@ export function InterviewsView() {
                 title={INTERVIEW_TYPE_LABELS[iv.type] ?? iv.type}
                 meta={new Date(iv.created_at).toLocaleString()}
                 trailing={
-                  <>
-                    <Badge tone={STATUS_TONE[iv.status] ?? "neutral"} className="capitalize">
-                      {iv.status.replace(/_/g, " ")}
-                    </Badge>
-                    <ChevronRightIcon
-                      size={18}
-                      className="text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transform-none"
-                    />
-                  </>
+                  <Badge tone={STATUS_TONE[iv.status] ?? "neutral"} className="capitalize">
+                    {iv.status.replace(/_/g, " ")}
+                  </Badge>
+                }
+                actions={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void handleDelete(iv)}
+                    aria-label={`Delete ${INTERVIEW_TYPE_LABELS[iv.type] ?? iv.type} interview from ${new Date(iv.created_at).toLocaleString()}`}
+                    className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                  >
+                    <TrashIcon size={14} />
+                  </Button>
                 }
               />
             </li>

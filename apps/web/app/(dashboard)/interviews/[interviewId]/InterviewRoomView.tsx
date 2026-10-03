@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { useToast } from "@/components/ui/Toast";
-import { RefreshIcon } from "@/components/ui/icons";
+import { RefreshIcon, TrashIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
@@ -42,6 +42,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
   const answerRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // The coding editor appears beside the chat while a problem is active; the
@@ -162,6 +163,52 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       onConfirm: completeInterview,
     });
     if (ok) toast({ tone: "success", title: "Interview ended", description: "You can now get your report." });
+  }
+
+  async function deleteInterview() {
+    try {
+      await apiClient.delete(`/interviews/${interviewId}`);
+    } catch (err) {
+      throw new Error(err instanceof ApiError ? err.message : "Could not delete this interview.");
+    }
+  }
+
+  async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this interview?",
+      description:
+        "The transcript, any code you submitted and the report for this interview are removed too. This can't be undone.",
+      confirmLabel: "Delete interview",
+      tone: "danger",
+      onConfirm: deleteInterview,
+    });
+    if (ok) {
+      toast({ tone: "success", title: "Interview deleted" });
+      router.push("/interviews");
+    }
+  }
+
+  async function handleCancelSetup() {
+    setCancelling(true);
+    try {
+      const updated = await apiClient.post<Interview>(`/interviews/${interviewId}/abort`);
+      setInterview(updated);
+      toast({ tone: "info", title: "Setup cancelled" });
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "interview_not_cancellable") {
+        toast({ tone: "info", title: "This interview is no longer being set up", description: "Reloading it." });
+        setInterview(null);
+        setAttempt((n) => n + 1);
+      } else {
+        toast({
+          tone: "error",
+          title: "Could not cancel the setup",
+          description: err instanceof ApiError ? err.message : "Please try again.",
+        });
+      }
+    } finally {
+      setCancelling(false);
+    }
   }
 
   // Time ran out on its own: no question to ask, just close it.
@@ -338,6 +385,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           </div>
 
           {isActive && (
+            // Reserve the bar's resting height so switching voice on/off or the unsupported note does not shove the chat around.
+            <div className="min-h-[3.25rem] bg-background/60">
             <VoiceBar
               voice={voice}
               settings={voiceSettings}
@@ -348,6 +397,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
               reviewing={reviewing}
               sending={sending}
             />
+            </div>
           )}
 
           {isActive ? (
@@ -386,7 +436,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
             <div className="border-t border-border bg-card p-5 text-center">
               <p className="mb-3 text-sm text-muted-foreground">
                 {interview.status === "setting_up"
-                  ? "This interview is still being set up (or setup did not finish). Refresh in a moment, or start a new one."
+                  ? "This interview is still being set up. If it is stuck, you can cancel the setup and start a new one."
                   : interview.status === "aborted"
                     ? "This interview was stopped before it finished."
                     : "This interview is finished."}
@@ -404,12 +454,27 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
                     Refresh
                   </Button>
                 )}
+                {interview.status === "setting_up" && (
+                  <Button variant="outline" onClick={() => void handleCancelSetup()} loading={cancelling}>
+                    {cancelling ? "Cancelling…" : "Cancel setup"}
+                  </Button>
+                )}
                 {interview.status === "completed" && (
                   <Button onClick={() => router.push("/reports")}>Get my report</Button>
                 )}
                 <Button variant="outline" onClick={() => router.push("/interviews")}>
                   Back to interviews
                 </Button>
+                {(interview.status === "completed" || interview.status === "aborted") && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => void handleDelete()}
+                    className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                  >
+                    <TrashIcon size={14} />
+                    Delete interview
+                  </Button>
+                )}
               </div>
             </div>
           )}

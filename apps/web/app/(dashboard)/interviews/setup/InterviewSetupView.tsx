@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useToast } from "@/components/ui/Toast";
 import { FormSkeleton } from "@/components/ui/Skeleton";
 import { FileIcon, KeyIcon, RefreshIcon } from "@/components/ui/icons";
 import { LinkButton } from "@/components/ui/LinkButton";
@@ -33,6 +34,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function InterviewSetupView() {
   const router = useRouter();
+  const { toast } = useToast();
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [validProviders, setValidProviders] = useState<InterviewProviderName[]>([]);
   const [type, setType] = useState<InterviewType>("coding");
@@ -42,7 +44,11 @@ export function InterviewSetupView() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const mounted = useRef(true);
+  // Set when the user cancels; the polling loop checks it after every await.
+  const cancelled = useRef(false);
+  const startedInterviewId = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -89,6 +95,8 @@ export function InterviewSetupView() {
     setStarting(true);
     setProgress(null);
     setError(null);
+    cancelled.current = false;
+    startedInterviewId.current = null;
 
     try {
       // The server answers at once with a job; setup (questions, brief,
@@ -100,9 +108,17 @@ export function InterviewSetupView() {
         jd_text: jdText,
       });
 
+      startedInterviewId.current = started.interview_id;
+      if (cancelled.current) {
+        // Cancel was pressed while the start request was still in flight.
+        await apiClient.post(`/interviews/${started.interview_id}/abort`).catch(() => {});
+        return;
+      }
+
       const deadline = Date.now() + GIVE_UP_AFTER_MS;
-      while (mounted.current) {
+      while (mounted.current && !cancelled.current) {
         const job = await apiClient.get<Job>(`/jobs/${started.job_id}`);
+        if (cancelled.current) return;
         if (job.status === "succeeded") {
           router.push(`/interviews/${started.interview_id}`);
           return;
@@ -121,9 +137,36 @@ export function InterviewSetupView() {
         await sleep(POLL_EVERY_MS);
       }
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || cancelled.current) return;
       setError(err instanceof ApiError ? err.message : "Could not start the interview.");
       setStarting(false);
+    }
+  }
+
+  /** Stops waiting, tells the server to drop the half-prepared interview and returns to the form. */
+  async function handleCancel() {
+    cancelled.current = true;
+    setCancelling(true);
+    const id = startedInterviewId.current;
+    try {
+      if (id) await apiClient.post(`/interviews/${id}/abort`);
+      toast({ tone: "info", title: "Setup cancelled", description: "Nothing was started. You can change the details and try again." });
+      setStarting(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "interview_not_cancellable" && id) {
+        toast({ tone: "info", title: "The interview was already ready", description: "Opening it now." });
+        router.push(`/interviews/${id}`);
+        return;
+      }
+      toast({
+        tone: "error",
+        title: "Could not cancel the setup",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+      });
+      // The server may still finish the setup: resume waiting is not possible any more, so go back to the form.
+      setStarting(false);
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -136,6 +179,9 @@ export function InterviewSetupView() {
           {progress ?? "Analyzing your resume and matching questions to the job description."}
         </p>
         <p className="text-xs text-muted-foreground">This usually takes under a minute. You can keep this tab open.</p>
+        <Button type="button" variant="outline" onClick={() => void handleCancel()} loading={cancelling}>
+          {cancelling ? "Cancelling…" : "Cancel"}
+        </Button>
       </div>
     );
   }

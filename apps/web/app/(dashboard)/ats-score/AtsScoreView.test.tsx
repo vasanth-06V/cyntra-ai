@@ -21,7 +21,10 @@ const resumes = [{ id: "r1", file_key: "resumes/u/cv.pdf", parsed_text: "x", cre
 const keys = [{ id: "k", provider: "gemini", slot: "primary", is_valid: true, last_validated_at: null }];
 
 beforeEach(() => {
-  vi.mocked(apiClient.get).mockReset().mockResolvedValue(keys as never);
+  // Keys for /keys, an empty history for the "Previous checks" panel.
+  vi.mocked(apiClient.get)
+    .mockReset()
+    .mockImplementation((async (path: string) => (path.startsWith("/ats/history") ? [] : keys)) as never);
   vi.mocked(apiClient.post).mockReset();
 });
 

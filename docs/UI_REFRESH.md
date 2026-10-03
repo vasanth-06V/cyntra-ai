@@ -110,3 +110,32 @@ See `docs/FRONTEND_GAPS.md` for the audit table and the open backend work.
 
 ### Tests
 Vitest now also runs component tests in jsdom (`// @vitest-environment jsdom` per file, `test/setup.ts`, `test/utils.tsx`). Dev-only dependencies added: `jsdom`, `@testing-library/react`, `@testing-library/dom`, `@testing-library/user-event`, `@testing-library/jest-dom`.
+
+## 4. Round 3: the new backend features
+
+Wires the finished backend (migrations 0028-0029 and the new endpoints) into the UI. Status of each item is in `docs/FRONTEND_GAPS.md` section 3 (B01-B08).
+
+### New building blocks
+- `components/ui/InlineRename`: one inline editor for renaming in place (resume, chat list, chat thread). Enter saves, Escape cancels, focus lands in the field and returns to the opener, `validate` blocks saving and shows its message, a thrown error from `onSave` stays inline (`role="alert"`) with the editor open.
+- `ListRow` gained an `editor` slot that replaces title, meta and actions while editing (and drops the stretched link so the input is clickable).
+- `components/ats/AtsHistoryPanel`: "Previous checks" for one resume (mount with `key={resumeId}`).
+- `app/(dashboard)/settings/team/TeamManager`: owner-only user management; `lib/team.ts` is the single list of permission keys.
+- `lib/format.ts` (`relativeTime`, `formatDateTime`, `initials`), `lib/chat.ts` (title rules), `apiClient.put`.
+- Types: `types/team.ts`, ATS history types and `history_id` in `types/ats.ts`, `display_name` in `types/resumes.ts`.
+
+### Behaviour
+- Resume rename route handler is owner-scoped and column-limited; `POST /api/resumes` maps the database `resume_limit` trigger error to the existing 409.
+- ATS: after each score the history list is refetched quietly (also when `history_id` is null); opening a saved result shows a banner and a way back; switching resume clears the opened saved result.
+- Team: optimistic role and permission changes roll back with an error toast; Owner and own rows read-only; permissions only editable on Admins; cards below `md`, one bordered list from `md`.
+- Interviews: cancel during setup (page and room), delete from the list and the finished room with a dialog that names what is removed; `resume_id: null` interviews work everywhere.
+- Question bank: editing sends explicit `null` to clear topic or difficulty.
+
+### Polish
+- Interview room: the voice bar reserves its resting height, so toggling voice or the unsupported note no longer pushes the chat.
+- Chat bubbles stop growing at 42rem on wide screens (readable line length).
+- New screens use wrapping flex rows, so they hold at 375 px (rename editors wrap their buttons, history and team rows stack).
+- Not done: animating the code editor panel's arrival beside the chat (the grid switches columns instantly; a smooth version needs the panel mounted all the time) and a generic `DataList` (ListRow plus the Team list covered both cases without one).
+
+### Tests
+Component and route tests for every item (resume rename, rename route, upload `resume_limit` mapping, ATS history, Team, setup cancel, room cancel and delete, interviews list delete, chat rename, question clear, formatting helpers). Run with `cd apps/web && npx vitest run`.
+

@@ -7,13 +7,21 @@ import { Badge, type Tone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { InlineRename } from "@/components/ui/InlineRename";
 import { ListRow } from "@/components/ui/ListRow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import { FileIcon, RefreshIcon, TrashIcon, UploadIcon } from "@/components/ui/icons";
+import { FileIcon, PencilIcon, RefreshIcon, TrashIcon, UploadIcon } from "@/components/ui/icons";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
-import { MAX_RESUMES, fetchResumes, resumeName, validateResumeFile } from "@/lib/resumes";
+import {
+  MAX_RESUMES,
+  MAX_RESUME_NAME_LENGTH,
+  fetchResumes,
+  resumeName,
+  validateResumeFile,
+  validateResumeName,
+} from "@/lib/resumes";
 import type { Resume } from "@/types/resumes";
 
 function statusLabel(resume: Resume): { text: string; tone: Tone } {
@@ -31,6 +39,8 @@ export function ResumesView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const renameOpener = useRef<HTMLButtonElement | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -139,6 +149,31 @@ export function ResumesView() {
     }
   }
 
+  async function renameResume(resume: Resume, value: string) {
+    let res: Response;
+    try {
+      res = await fetch(`/api/resumes/${resume.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ display_name: value.trim() === "" ? null : value.trim() }),
+      });
+    } catch {
+      throw new Error("Could not reach the server. Check your connection and try again.");
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `Could not rename this resume (error ${res.status}).`);
+    const saved = (body as { display_name?: string | null }).display_name ?? null;
+    setResumes((prev) => prev.map((r) => (r.id === resume.id ? { ...r, display_name: saved } : r)));
+    toast({ tone: "success", title: saved ? "Resume renamed" : "Name reset to the file name", description: saved ?? undefined });
+  }
+
+  function closeRename(saved: boolean) {
+    void saved;
+    setRenamingId(null);
+    // Put focus back on the Rename button that opened the editor.
+    setTimeout(() => renameOpener.current?.focus(), 0);
+  }
+
   async function handleRetry(id: string) {
     setRetryingId(id);
     try {
@@ -244,7 +279,20 @@ export function ResumesView() {
                   <ListRow
                     icon={<FileIcon size={18} />}
                     title={name}
-                    meta={`Uploaded ${new Date(resume.created_at).toLocaleDateString()}`}
+                    editor={
+                      renamingId === resume.id ? (
+                        <InlineRename
+                          initialValue={name}
+                          label={`New name for ${name}`}
+                          placeholder="Name (empty uses the file name)"
+                          maxLength={MAX_RESUME_NAME_LENGTH}
+                          validate={validateResumeName}
+                          onSave={(v) => renameResume(resume, v)}
+                          onClose={closeRename}
+                        />
+                      ) : undefined
+                    }
+                    meta={`${resume.display_name ? `${resume.file_key.split("/").pop()} · ` : ""}Uploaded ${new Date(resume.created_at).toLocaleDateString()}`}
                     badge={<Badge tone={status.tone}>{status.text}</Badge>}
                     actions={
                       <>
@@ -260,6 +308,20 @@ export function ResumesView() {
                             {retryingId === resume.id ? "Processing…" : "Retry processing"}
                           </Button>
                         )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            renameOpener.current = e.currentTarget;
+                            setRenamingId(resume.id);
+                          }}
+                          aria-label={`Rename ${name}`}
+                          className="text-muted-foreground"
+                        >
+                          <PencilIcon size={14} />
+                          Rename
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

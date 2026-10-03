@@ -5,9 +5,18 @@ export const MAX_RESUMES = 3;
 export const MAX_RESUME_BYTES = 500 * 1024;
 export const RESUME_EXTENSIONS = ["pdf", "docx"] as const;
 
-/** A friendly name for a stored resume (the file name without the folder). */
-export function resumeName(resume: Pick<Resume, "file_key">): string {
-  return resume.file_key.split("/").pop() ?? resume.file_key;
+export const MAX_RESUME_NAME_LENGTH = 80;
+
+/** The owner's chosen name, or the file name without the storage folder. */
+export function resumeName(resume: Pick<Resume, "file_key" | "display_name">): string {
+  return resume.display_name?.trim() || (resume.file_key.split("/").pop() ?? resume.file_key);
+}
+
+/** First problem with a proposed resume name (empty is allowed: it clears the name). */
+export function validateResumeName(value: string): string | null {
+  return value.trim().length > MAX_RESUME_NAME_LENGTH
+    ? `Keep the name to ${MAX_RESUME_NAME_LENGTH} characters or fewer.`
+    : null;
 }
 
 /** First problem with a file chosen for upload, or null when it looks fine. */

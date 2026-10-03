@@ -1,13 +1,8 @@
 import { requireRole } from "@/lib/auth/guards";
-import { StubPage } from "@/components/ui/StubPage";
+import { TeamManager } from "./TeamManager";
 
 export async function TeamView() {
-  await requireRole("owner");
+  const { user } = await requireRole("owner");
 
-  return (
-    <StubPage
-      title="Team"
-      description="Promote users to Admin and grant custom permissions (Owner only)."
-    />
-  );
+  return <TeamManager currentUserId={user.id} />;
 }

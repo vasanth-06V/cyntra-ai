@@ -48,7 +48,7 @@ export function MessageBubble({
       >
         {isUser ? <UserIcon size={16} /> : <SparkleIcon size={16} />}
       </span>
-      <div className={`flex min-w-0 max-w-[85%] flex-col sm:max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex min-w-0 max-w-[85%] flex-col sm:max-w-[75%] lg:max-w-[42rem] ${isUser ? "items-end" : "items-start"}`}>
         <span className="mb-1 px-1 text-xs font-medium text-muted-foreground">{name}</span>
         <div
           className={`whitespace-pre-wrap break-words px-4 py-2.5 text-sm leading-6 shadow-xs ${

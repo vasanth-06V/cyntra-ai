@@ -149,3 +149,101 @@ describe("ResumesView", () => {
     expect(await screen.findByText("file-1.pdf")).toBeInTheDocument();
   });
 });
+
+describe("ResumesView rename", () => {
+  it("shows the display name instead of the file name, with the file name as a hint", async () => {
+    mockFetch([{ match: "/api/resumes", json: [{ ...resume(1), display_name: "Backend CV" }] }]);
+    renderWithProviders(<ResumesView />);
+    expect(await screen.findByText("Backend CV")).toBeInTheDocument();
+    expect(screen.getByText(/file-1\.pdf · Uploaded/)).toBeInTheDocument();
+  });
+
+  it("renames inline with Enter, sends the trimmed name and confirms with a toast", async () => {
+    const { calls } = mockFetch([
+      { match: "/api/resumes", json: [resume(1)] },
+      { method: "PATCH", match: "/api/resumes/r1", json: { id: "r1", display_name: "Backend CV" } },
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<ResumesView />);
+
+    await user.click(await screen.findByRole("button", { name: "Rename file-1.pdf" }));
+    const input = screen.getByLabelText("New name for file-1.pdf");
+    expect(input).toHaveFocus();
+    await user.clear(input);
+    await user.type(input, "  Backend CV  {Enter}");
+
+    const list = screen.getByRole("list", { name: "Your resumes" });
+    expect(await within(list).findByText("Backend CV")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/New name for/)).not.toBeInTheDocument();
+    const patch = calls.find((c) => c.method === "PATCH")!;
+    expect(JSON.parse(patch.body as string)).toEqual({ display_name: "Backend CV" });
+    expect(await screen.findByText("Resume renamed")).toBeInTheDocument();
+  });
+
+  it("sends null when the name is emptied (back to the file name)", async () => {
+    const { calls } = mockFetch([
+      { match: "/api/resumes", json: [{ ...resume(1), display_name: "Backend CV" }] },
+      { method: "PATCH", match: "/api/resumes/r1", json: { id: "r1", display_name: null } },
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<ResumesView />);
+
+    await user.click(await screen.findByRole("button", { name: "Rename Backend CV" }));
+    await user.clear(screen.getByLabelText("New name for Backend CV"));
+    await user.click(screen.getByRole("button", { name: "Save name" }));
+
+    expect(await screen.findByText("Name reset to the file name")).toBeInTheDocument();
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body as string)).toEqual({ display_name: null });
+    expect(within(screen.getByRole("list", { name: "Your resumes" })).getByText("file-1.pdf")).toBeInTheDocument();
+  });
+
+  it("blocks a name over 80 characters with an inline message and no request", async () => {
+    const { calls } = mockFetch([{ match: "/api/resumes", json: [resume(1)] }]);
+    const user = userEvent.setup();
+    renderWithProviders(<ResumesView />);
+
+    await user.click(await screen.findByRole("button", { name: "Rename file-1.pdf" }));
+    const input = screen.getByLabelText("New name for file-1.pdf");
+    await user.clear(input);
+    await user.type(input, "a".repeat(81));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("80 characters");
+    expect(screen.getByRole("button", { name: "Save name" })).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("cancels with Escape and with the Cancel button, changing nothing", async () => {
+    const { calls } = mockFetch([{ match: "/api/resumes", json: [resume(1)] }]);
+    const user = userEvent.setup();
+    renderWithProviders(<ResumesView />);
+
+    const rename = await screen.findByRole("button", { name: "Rename file-1.pdf" });
+    await user.click(rename);
+    await user.type(screen.getByLabelText("New name for file-1.pdf"), "zzz{Escape}");
+    expect(screen.queryByLabelText(/New name for/)).not.toBeInTheDocument();
+    await waitFor(() => expect(rename).toHaveFocus());
+
+    await user.click(rename);
+    await user.click(screen.getByRole("button", { name: "Cancel rename" }));
+    expect(screen.queryByLabelText(/New name for/)).not.toBeInTheDocument();
+    expect(screen.getByText("file-1.pdf")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("keeps the editor open and shows the error inline when saving fails", async () => {
+    mockFetch([
+      { match: "/api/resumes", json: [resume(1)] },
+      { method: "PATCH", match: "/api/resumes/r1", status: 500, json: { error: "permission denied" } },
+    ]);
+    const user = userEvent.setup();
+    renderWithProviders(<ResumesView />);
+
+    await user.click(await screen.findByRole("button", { name: "Rename file-1.pdf" }));
+    await user.type(screen.getByLabelText("New name for file-1.pdf"), "x{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("permission denied");
+    expect(screen.getByLabelText("New name for file-1.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("Resume renamed")).not.toBeInTheDocument();
+  });
+});

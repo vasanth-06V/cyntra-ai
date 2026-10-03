@@ -1,6 +1,6 @@
 # Frontend gaps: audit, fixes and open backend work
 
-Scope: `apps/web`. Second pass after the UI refresh (`docs/UI_REFRESH.md`). Status key: **Fixed** (code changed and covered by a test where noted), **Backend** (needs a backend/database change, see section 3), **Left** (deliberately not done, see section 4).
+Scope: `apps/web`. Second pass after the UI refresh (`docs/UI_REFRESH.md`). Status key: **Fixed** (code changed and covered by a test where noted), **Backend** (needed a backend/database change, see section 3, all now built), **Left** (deliberately not done, see section 4).
 
 ## 1. The reported bug: "Delete does nothing on the Resumes page"
 
@@ -49,33 +49,32 @@ Severity: H = data loss, silent failure or blocked flow; M = misleading or inacc
 | G23 | API keys | Deleting the Gemini primary key gave no warning although it sends the user back to onboarding | Generic confirmation | Specific warning in the dialog (M) | Fixed, tested |
 | G24 | Report download | Anchor was not attached to the DOM before `click()` (Firefox) | Detached anchor | Attached, removed, delayed `revokeObjectURL`, toast (L) | Fixed |
 | G25 | Interview room | An interview stuck in `setting_up` was a dead end ("This interview is setting_up") | No state handling | Plain explanation + Refresh button; `aborted` and finished texts (M) | Fixed |
-| G26 | Question bank | Editing a question did not bring the form into view; no keyboard save; unlabeled inputs (question, tags) | No focus handling | Scroll + focus on edit, Ctrl+Enter, aria-labels, `maxLength` 4000, note that topic/difficulty cannot be cleared (M) | Fixed (clearing is B04) |
+| G26 | Question bank | Editing a question did not bring the form into view; no keyboard save; unlabeled inputs (question, tags) | No focus handling | Scroll + focus on edit, Ctrl+Enter, aria-labels, `maxLength` 4000, note that topic/difficulty cannot be cleared (M) | Fixed (clearing: see B04, done in Round 3) |
 | G27 | Everywhere | Several rows each had a button just called "Delete" | Visible-text-only names | Specific `aria-label`s ("Delete file-1.pdf", "Delete groq primary key") (M) | Fixed |
 | G28 | Chat list, Interviews list | Only the newest 50 were ever shown, silently | Server page size 50, no paging UI | "Show older chats/interviews" loads the next page (M) | Fixed |
 | G29 | Chat thread | A chat with no usable key just had a disabled composer | No guidance | Message with a link to API Keys (L) | Fixed, tested |
-| G30 | Team (owner) | Page is a stub saying "Coming in a later build phase" | No backend | Wording made honest; see B03 | Backend |
+| G30 | Team (owner) | Page is a stub saying "Coming in a later build phase" | No backend | Wording made honest; see B03 | Fixed in Round 3 (see B03) |
 | G31 | Resumes | Upload errors only appeared after a round trip (wrong type, empty, > 500 KB) | Server-only validation | Same rules checked in the browser first (`validateResumeFile`), server still authoritative (L) | Fixed, tested |
 | G32 | Layout | Locking page scroll for a dialog made the page jump sideways by the scrollbar width | No stable gutter | `scrollbar-gutter: stable` on `html` (L) | Fixed |
 
 Audited and found sound (no change needed): sign-in (Google, email/password, demo link), onboarding steps and Gemini gate, theme toggle, mobile nav, skip link, voice features (not touched), job polling in interview setup, report generation and the print layout, code draft persistence, server-waking banner, interview turn error rollback.
 
-## 3. Needs backend work (not implemented, by instruction)
+## 3. Backend work (all B01-B08 are now built and wired in the UI, Round 3)
 
-| ID | Feature | Proposal |
+| ID | Feature | Status and what the UI does |
 |---|---|---|
-| B01 | Rename a resume | Migration: `alter table resumes add column display_name text`. The existing `resumes_owner_only` policy already allows the owner to update the row, so no endpoint is strictly needed; add `display_name` to `GET /api/resumes` select and show `display_name ?? file name`. Optionally `PATCH /rag/resumes/{id}` with `{display_name: str(1..80)}` for validation. |
-| B02 | ATS score history | Table `ats_scores(id uuid pk, user_id uuid references profiles on delete cascade, resume_id uuid references resumes on delete set null, jd_excerpt text, provider text, composite_score int, result jsonb, created_at timestamptz default now())` with owner-only RLS (`for all using (user_id = (select auth.uid()))`). `ats.service.score_resume` inserts a row; `GET /ats/scores?limit&offset` returns summaries and `GET /ats/scores/{id}` the full result; `DELETE /ats/scores/{id}`. Cap to the last 20 per user. |
-| B03 | Team management (Owner) | `GET /team/users` (service role join of `auth.users` email, `profiles.full_name`, `roles.role`, permission keys; `profiles` select is own-row only so the browser cannot list users), `PATCH /team/users/{id}/role` `{role: "admin"|"user"}` (never the Owner), `PUT /team/users/{id}/permissions` `{permissions: ["manage_question_bank", ...]}`. Writes to `roles` and `admin_permissions` are already owner-only under RLS; the endpoints add the user listing and an audit log. |
-| B04 | Clear topic or difficulty of a question | `PATCH /interviews/question-bank/{id}` treats `null` as "unchanged" (`if difficulty is not None`). Use `body.model_fields_set` (Pydantic) so an explicit `null` clears the column; then the UI can send `null`. |
-| B05 | Cancel an interview setup / abort | `POST /interviews/{id}/abort` (sets status `aborted`, idempotent) and `DELETE /jobs/{id}` (or `POST /jobs/{id}/cancel`) so a stuck `setting_up` interview can be dismissed instead of waiting. |
-| B06 | Delete an interview from history | `DELETE /interviews/{id}` that also removes transcript rows, reports and submissions in one transaction (confirm every FK to `interviews` cascades first); the UI can then offer it in the list. |
-| B07 | Enforce the 3-resume limit in the database | Today only the Next route handler checks it. The `resumes_owner_only` policy lets a signed-in user insert rows straight through the Supabase API with the public anon key, bypassing the handler. Add a `before insert` trigger on `resumes` that raises when `count(*) where user_id = new.user_id >= 3` (or an RLS `with check` using a counting function). Also mirror the rule in `rag/service.py` for the processing endpoint. |
-| B08 | Rename a conversation | Feasible today without backend changes (RLS lets the owner update `conversations.title`), left undone as not requested. A backend alternative: let `POST /chat/conversations/{id}/messages` auto-title from the first message. |
+| B01 | Rename a resume | **Done.** `PATCH /api/resumes/[id]` (Next route handler, owner-scoped update of `display_name` only, trimmed, empty becomes null, 1-80 characters, 400/401/404). `GET /api/resumes` selects `display_name`; `resumeName()` returns `display_name ?? file name` and is used by the Resumes page, the ATS and interview-setup dropdowns. Inline rename (pencil, Enter saves, Escape cancels, validation message, toast, inline error) on the Resumes page. |
+| B02 | ATS score history | **Done.** "Previous checks" panel under the ATS form for the selected resume: list (mini ring, job title or "Untitled role", relative date, excerpt), open a saved result in the same breakdown with a "Saved result from ..." banner and "Run a new check", delete with confirm and toast, skeleton, empty state, error with retry, quiet refetch after every new score (`history_id` marks the new row as "Showing"). Note shown: the last 10 checks per resume are kept. |
+| B03 | Team management (Owner) | **Done.** `app/(dashboard)/settings/team`: server component keeps `requireRole("owner")`, client `TeamManager` lists users (avatar initials, role badge), "Make admin" / "Make user" (confirm when demoting), permission checkboxes from one constant (`lib/team.ts`), optimistic updates with rollback and error toasts, search above 8 users, skeleton, empty and error states. Owner row and your own row are read-only; plain users show disabled permissions with a hint; demoting clears permissions locally. The "Not available yet" stub is gone. |
+| B04 | Clear topic or difficulty of a question | **Done.** On edit, an emptied topic or a blank difficulty is sent as an explicit `null`; on create empty fields are still omitted. The "cannot be cleared" note is replaced by a hint. Tested. |
+| B05 | Cancel an interview setup | **Done.** Setup page shows a "Cancel" button while the job runs: stops polling, `POST /interviews/{id}/abort`, toast, back to the form (handles a cancel pressed before the start response arrived, and the 409 `interview_not_cancellable` case by opening the interview). The room offers "Cancel setup" for `setting_up` instead of the dead end. |
+| B06 | Delete an interview | **Done.** Delete on every interviews list row and in the room's finished state (completed or aborted), with a confirm dialog that names the transcript, code and report, a toast, and removal from the list state. Interviews with `resume_id: null` still link to the room. |
+| B07 | Enforce the 3-resume limit in the database | **Done (UI side).** The trigger error (message starting `resume_limit`, code P0001) is mapped in `POST /api/resumes` to the same 409 `{error, code: "resume_limit"}` as the pre-check (the stored object is cleaned up). The pre-check stays. |
+| B08 | Rename a conversation | **Done.** `PATCH /chat/conversations/{id}` from an inline rename on chat list rows and in a new thread header (title 1-120, trimmed, validation, toast). The header reads the title through the user's own Supabase session because the API has no single-conversation GET. |
 
 ## 4. Deliberately left alone
 
 - Backend, migrations, `.env` files and anything under `apps/api` (constraint).
 - Voice features, Monaco loading, three.js scene, report print layout (kept working).
 - The temporary demo sign-up route and its link (marked temporary in the code; owner decides when to remove).
-- Conversation rename (B08) and interview deletion (B06): not needed for the reported problems.
 - Undo for deletes: a true undo would mean deferring the real DELETE (lost if the tab closes) or restoring rows the API cannot recreate (resume files, report text). The confirmation dialog plus a "deleted" toast was chosen instead.

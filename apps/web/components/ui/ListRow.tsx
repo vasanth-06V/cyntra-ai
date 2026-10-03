@@ -18,6 +18,7 @@ export function ListRow({
   trailing,
   href,
   actions,
+  editor,
   className = "",
 }: {
   icon?: ReactNode;
@@ -30,6 +31,8 @@ export function ListRow({
   trailing?: ReactNode;
   href?: string;
   actions?: ReactNode;
+  /** When set (for example an inline rename form), replaces the title, meta and actions. */
+  editor?: ReactNode;
   className?: string;
 }) {
   const heading = href ? (
@@ -46,7 +49,7 @@ export function ListRow({
   return (
     <div
       className={`group relative flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm transition-[transform,box-shadow,border-color] duration-200 ease-out has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-ring ${
-        href
+        href && !editor
           ? "hover:-translate-y-0.5 hover:border-border-strong hover:shadow-md motion-reduce:hover:translate-y-0"
           : ""
       } ${className}`}
@@ -61,13 +64,17 @@ export function ListRow({
             {icon}
           </span>
         )}
-        <div className="min-w-0 flex-1">
-          {heading}
-          {meta && <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{meta}</p>}
-          {badge && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{badge}</div>}
-        </div>
+        {editor ? (
+          <div className="relative z-10 min-w-0 flex-1">{editor}</div>
+        ) : (
+          <div className="min-w-0 flex-1">
+            {heading}
+            {meta && <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{meta}</p>}
+            {badge && <div className="mt-1.5 flex flex-wrap items-center gap-1.5">{badge}</div>}
+          </div>
+        )}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className={`flex shrink-0 items-center gap-2 ${editor ? "hidden" : ""}`}>
         {trailing}
         {actions && <div className="relative z-10 flex items-center gap-1.5">{actions}</div>}
         {href && !actions && (

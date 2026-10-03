@@ -9,11 +9,13 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import { FileIcon, KeyIcon, RefreshIcon } from "@/components/ui/icons";
+import { ArrowLeftIcon, FileIcon, KeyIcon, RefreshIcon } from "@/components/ui/icons";
 import { LinkButton } from "@/components/ui/LinkButton";
 import { fetchResumes, resumeName } from "@/lib/resumes";
+import { AtsHistoryPanel } from "@/components/ats/AtsHistoryPanel";
 import { ScoreBreakdown } from "@/components/ats/ScoreBreakdown";
-import type { ScoreResponse } from "@/types/ats";
+import { formatDateTime } from "@/lib/format";
+import type { AtsHistoryDetail, ScoreResponse } from "@/types/ats";
 import { PROVIDER_INFO, type ProviderKey, type ProviderName } from "@/types/keys";
 import type { Resume } from "@/types/resumes";
 
@@ -33,6 +35,11 @@ export function AtsScoreView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const resultRef = useRef<HTMLDivElement>(null);
+  const jdRef = useRef<HTMLTextAreaElement>(null);
+  // A saved check opened from "Previous checks" replaces the fresh result on screen.
+  const [saved, setSaved] = useState<AtsHistoryDetail | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [shownHistoryId, setShownHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([fetchResumes(), apiClient.get<ProviderKey[]>("/keys")])
@@ -64,6 +71,7 @@ export function AtsScoreView() {
     setScoring(true);
     setError(null);
     setResult(null);
+    setSaved(null);
 
     try {
       const response = await apiClient.post<ScoreResponse>("/ats/score", {
@@ -72,6 +80,9 @@ export function AtsScoreView() {
         provider,
       });
       setResult(response);
+      setShownHistoryId(response.history_id ?? null);
+      // The new check is saved server-side; refetch the list (also when history_id is null, quietly).
+      setHistoryVersion((n) => n + 1);
       // Bring the result into view and let screen readers find it.
       setTimeout(() => {
         resultRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
@@ -83,6 +94,25 @@ export function AtsScoreView() {
       setScoring(false);
     }
   }
+
+  function showSaved(detail: AtsHistoryDetail) {
+    setSaved(detail);
+    setShownHistoryId(detail.id);
+    setTimeout(() => {
+      resultRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      resultRef.current?.focus({ preventScroll: true });
+    }, 50);
+  }
+
+  function startNewCheck() {
+    setSaved(null);
+    setResult(null);
+    setShownHistoryId(null);
+    jdRef.current?.focus();
+    jdRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }
+
+  const shown = saved ? saved.result : result;
 
   return (
     <div>
@@ -134,7 +164,11 @@ export function AtsScoreView() {
                 <select
                   id="ats-resume"
                   value={resumeId}
-                  onChange={(e) => setResumeId(e.target.value)}
+                  onChange={(e) => {
+                    setResumeId(e.target.value);
+                    setSaved(null);
+                    setShownHistoryId(null);
+                  }}
                   className="field"
                 >
                   {resumes.map((r) => (
@@ -174,6 +208,7 @@ export function AtsScoreView() {
               </label>
               <textarea
                 id="ats-jd"
+                ref={jdRef}
                 value={jdText}
                 onChange={(e) => setJdText(e.target.value)}
                 onKeyDown={(e) => {
@@ -231,9 +266,37 @@ export function AtsScoreView() {
         </Card>
       )}
 
-      {result && (
+      {!loading && !loadError && resumeId && resumes.length > 0 && (
+        <AtsHistoryPanel
+          key={resumeId}
+          resumeId={resumeId}
+          refreshKey={historyVersion}
+          activeId={shownHistoryId}
+          onOpen={showSaved}
+          onDeleted={(id) => {
+            if (saved?.id === id) setSaved(null);
+            setShownHistoryId((cur) => (cur === id ? null : cur));
+          }}
+        />
+      )}
+
+      {shown && (
         <div ref={resultRef} tabIndex={-1} role="region" aria-label="ATS score result" className="mt-8 max-w-5xl outline-none">
-          <ScoreBreakdown result={result} />
+          {saved && (
+            <Alert tone="info" role="status" className="mb-4">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <span>
+                  Saved result from <strong>{formatDateTime(saved.created_at)}</strong>
+                  {saved.job_title ? <> for {saved.job_title}</> : null}. This is not a new check.
+                </span>
+                <Button type="button" size="sm" variant="outline" onClick={startNewCheck}>
+                  <ArrowLeftIcon size={14} />
+                  Run a new check
+                </Button>
+              </div>
+            </Alert>
+          )}
+          <ScoreBreakdown result={shown} />
         </div>
       )}
     </div>
