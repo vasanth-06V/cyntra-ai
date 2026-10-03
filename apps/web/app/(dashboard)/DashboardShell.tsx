@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { requireUser } from "@/lib/auth/guards";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { SignOutButton } from "@/components/ui/SignOutButton";
+import { NotificationsBell } from "@/components/ui/NotificationsBell";
 import { ServerWakingBanner } from "@/components/ui/ServerWakingBanner";
 
 const NAV_ITEMS = [
@@ -27,6 +28,12 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"
+      >
+        Skip to content
+      </a>
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border p-4 sm:flex print:hidden">
         <Link href="/dashboard" className="mb-6 px-2 text-lg font-semibold">
           CyntraAI
@@ -48,6 +55,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
         <header className="flex items-center justify-between border-b border-border px-6 py-3 print:hidden">
           <span className="text-sm text-muted-foreground">{user.email}</span>
           <div className="flex items-center gap-4">
+            <NotificationsBell />
             <ThemeToggle />
             <SignOutButton />
           </div>
@@ -68,7 +76,14 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
-        <main className="flex-1 p-6">{children}</main>
+        <main id="main" className="flex-1 p-6">
+          {children}
+        </main>
+        <footer className="border-t border-border px-6 py-3 text-xs text-muted-foreground print:hidden">
+          <Link href="/privacy" className="hover:underline">
+            Privacy
+          </Link>
+        </footer>
       </div>
     </div>
   );

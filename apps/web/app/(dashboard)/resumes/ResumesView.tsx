@@ -79,6 +79,7 @@ export function ResumesView() {
   }
 
   async function handleDelete(id: string) {
+    if (!window.confirm("Delete this resume? This cannot be undone.")) return;
     setError(null);
     const previous = resumes;
     setResumes((prev) => prev.filter((r) => r.id !== id));

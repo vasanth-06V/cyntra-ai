@@ -127,6 +127,7 @@ export function QuestionBankView() {
   }
 
   async function handleDelete(id: string) {
+    if (!window.confirm("Delete this question from the bank?")) return;
     const previous = questions;
     setQuestions((prev) => prev.filter((q) => q.id !== id));
     try {

@@ -1,6 +1,6 @@
 # Phase 10 — Polish and deploy (plan, for approval)
 
-Status: **DRAFT 2026-10-03, awaiting the owner's approval.** Nothing below is built yet.
+Status: **PARTLY BUILT 2026-10-03. Owner: deployment (10.4) is set aside until the application is completely ready. Built: 10.1 (except Docker/render), the OpenAPI snapshot, polish (key delete, confirmations, notifications bell, reduced motion, skip link, privacy page). Held for owner decisions: real-Postgres CI tests, Playwright smoke test. Deliberately kept until launch: the demo sign-up page.**
 Constraints: free tiers only (Render free for the API, Vercel Hobby for the web app, Supabase free for the database, auth and file storage). I cannot create accounts or deploy for you: I prepare every file and a step-by-step runbook, you do the clicks, then a check script verifies the result.
 
 ## 1. Where things stand

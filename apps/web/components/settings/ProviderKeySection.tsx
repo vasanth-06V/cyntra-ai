@@ -31,6 +31,10 @@ export function ProviderKeySection({
     onKeysChange([...others, saved]);
   }
 
+  function removeKey(gone: ProviderKey) {
+    onKeysChange(keys.filter((k) => k.id !== gone.id));
+  }
+
   return (
     <Card className="p-5">
       <div className="flex items-center justify-between">
@@ -55,6 +59,7 @@ export function ProviderKeySection({
           slot="primary"
           existing={primary}
           onSaved={upsertKey}
+          onDeleted={removeKey}
         />
       </div>
 
@@ -68,6 +73,7 @@ export function ProviderKeySection({
             slot="backup"
             existing={backup}
             onSaved={upsertKey}
+            onDeleted={removeKey}
           />
         </div>
       ) : (

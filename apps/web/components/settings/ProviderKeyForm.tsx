@@ -11,16 +11,19 @@ export function ProviderKeyForm({
   slot,
   existing,
   onSaved,
+  onDeleted,
 }: {
   provider: ProviderName;
   slot: KeySlot;
   existing?: ProviderKey;
   onSaved: (key: ProviderKey) => void;
+  onDeleted?: (key: ProviderKey) => void;
 }) {
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justValidated, setJustValidated] = useState<boolean | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,11 +49,29 @@ export function ProviderKeyForm({
     }
   }
 
+  async function handleDelete() {
+    if (!existing || !onDeleted) return;
+    if (!window.confirm(`Delete your saved ${provider} ${slot} key? You can add it again later.`)) return;
+    setRemoving(true);
+    setError(null);
+    try {
+      await apiClient.delete(`/keys/${existing.id}`);
+      setJustValidated(null);
+      onDeleted(existing);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete the key.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <input
           type="password"
+          aria-label={`${provider} ${slot} API key`}
+          autoComplete="off"
           placeholder={
             existing
               ? existing.is_valid
@@ -65,6 +86,11 @@ export function ProviderKeyForm({
         <Button type="submit" variant="secondary" disabled={loading || !value.trim()}>
           {loading ? "Checking…" : "Save"}
         </Button>
+        {existing && onDeleted && (
+          <Button type="button" variant="outline" onClick={handleDelete} disabled={removing || loading}>
+            {removing ? "Deleting…" : "Delete"}
+          </Button>
+        )}
       </div>
 
       <AnimatePresence mode="wait">

@@ -79,6 +79,11 @@ export function SignInView({ initialError = null }: { initialError?: string | nu
             <EmailPasswordSignIn onBack={() => setEmailMode(false)} />
           )}
         </Card>
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          <a href="/privacy" className="underline-offset-4 hover:underline">
+            Privacy
+          </a>
+        </p>
       </motion.div>
     </div>
   );
