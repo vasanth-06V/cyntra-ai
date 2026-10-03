@@ -23,6 +23,8 @@ from app.interviews.service import SETUP_JOB
 from app.jobs.router import router as jobs_router
 from app.keys.router import router as keys_router
 from app.llm.router import router as usage_router
+from app.reports import service as reports_service
+from app.reports.router import router as reports_router
 from app.rag.router import router as rag_router
 
 
@@ -49,7 +51,12 @@ async def lifespan(_: FastAPI):
     # Fail at boot, with a readable list, rather than on the first request.
     validate_config()
     await _recover_jobs()
-    yield
+    # Expired reports are refused at read time regardless; this also deletes them.
+    sweeper = asyncio.create_task(reports_service.sweep_forever(), name="report-sweep")
+    try:
+        yield
+    finally:
+        sweeper.cancel()
     # Let in-flight housekeeping (summaries, digests) finish rather than drop it.
     try:
         await asyncio.wait_for(background.drain(), timeout=8)
@@ -69,6 +76,7 @@ app.include_router(coding_router)
 app.include_router(interviews_router)
 app.include_router(jobs_router)
 app.include_router(usage_router)
+app.include_router(reports_router)
 
 install_error_handlers(app)
 

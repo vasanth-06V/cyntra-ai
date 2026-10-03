@@ -104,6 +104,10 @@ class _Query:
         self._filters.append(("eq", col, val))
         return self
 
+    def lt(self, col, val):
+        self._filters.append(("lt", col, val))
+        return self
+
     def gte(self, col, val):
         self._filters.append(("gte", col, val))
         return self
@@ -150,6 +154,8 @@ class _Query:
             if op == "in" and have not in val:
                 return False
             if op == "gte" and not (have is not None and have >= val):
+                return False
+            if op == "lt" and not (have is not None and have < val):
                 return False
         return True
 
@@ -212,7 +218,13 @@ class _Query:
                                     "code": "23505", "details": None, "hint": None})
                 row.setdefault("id", str(uuid.uuid4()))
                 # jobs are judged against the real clock (staleness), so stamp them with it
-                row.setdefault("created_at", datetime.now(UTC).isoformat() if self.table == "jobs" else self.db.now())
+                real_clock = self.table in ("jobs", "interview_reports")
+                row.setdefault("created_at", datetime.now(UTC).isoformat() if real_clock else self.db.now())
+                if self.table == "interview_reports":
+                    row.setdefault("expires_at", (datetime.fromisoformat(row["created_at"]) + timedelta(days=7)).isoformat())
+                    if any(r["interview_id"] == row["interview_id"] for r in rows):
+                        raise APIError({"message": "duplicate key value violates unique constraint",
+                                        "code": "23505", "details": None, "hint": None})
                 rows.append(row)
                 made.append(copy.deepcopy(row))
             return _Result(made)

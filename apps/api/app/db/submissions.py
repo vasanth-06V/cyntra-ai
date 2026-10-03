@@ -102,3 +102,20 @@ async def mark_failed(submission_id: str) -> None:
         )
 
     await run(_q)
+
+
+async def finished_for_interview(interview_id: str) -> list[dict]:
+    """Every finished review of this interview, with its verdict (for the report)."""
+    supabase = get_supabase()
+
+    def _q():
+        return (
+            supabase.table("code_submissions")
+            .select("question_id, language, line_count, status, verdict, created_at")
+            .eq("interview_id", interview_id)
+            .eq("status", "done")
+            .order("created_at")
+            .execute()
+        )
+
+    return (await run(_q)).data or []
