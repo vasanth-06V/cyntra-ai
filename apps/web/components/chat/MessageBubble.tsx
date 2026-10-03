@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
 import type { ChatMessage } from "@/types/chat";
 import { PROVIDER_INFO } from "@/types/keys";
-import { SparkleIcon, UserIcon } from "@/components/ui/icons";
+import { useToast } from "@/components/ui/Toast";
+import { CopyIcon, SparkleIcon, UserIcon } from "@/components/ui/icons";
 
 /**
  * One chat or interview message. `assistantLabel` names the other side when the
@@ -10,14 +11,27 @@ import { SparkleIcon, UserIcon } from "@/components/ui/icons";
 export function MessageBubble({
   message,
   assistantLabel,
+  copyable = false,
 }: {
   message: ChatMessage;
   assistantLabel?: string;
+  /** Shows a copy button under assistant messages (chat only). */
+  copyable?: boolean;
 }) {
+  const { toast } = useToast();
   const isUser = message.role === "user";
   const name = isUser
     ? "You"
     : (assistantLabel ?? (message.provider ? PROVIDER_INFO[message.provider].label : "Assistant"));
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      toast({ tone: "success", title: "Copied to clipboard", duration: 2200 });
+    } catch {
+      toast({ tone: "error", title: "Could not copy", description: "Select the text and copy it by hand." });
+    }
+  }
 
   return (
     <motion.div
@@ -45,6 +59,17 @@ export function MessageBubble({
         >
           {message.content || <TypingDots />}
         </div>
+        {copyable && !isUser && message.content && (
+          <button
+            type="button"
+            onClick={() => void copy()}
+            aria-label="Copy this reply"
+            className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <CopyIcon size={12} />
+            Copy
+          </button>
+        )}
       </div>
     </motion.div>
   );

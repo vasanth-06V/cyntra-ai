@@ -97,6 +97,7 @@ export function CodeEditorPanel({
   const [languageChoice, setLanguageChoice] = useState("Python");
   const [customLanguage, setCustomLanguage] = useState("");
   const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -214,15 +215,20 @@ export function CodeEditorPanel({
   }, [problem?.review_job_id]);
 
   async function handleSubmit() {
-    setConfirming(false);
+    if (submitting) return;
+    setSubmitting(true);
     setError(null);
     try {
       const started = await apiClient.post<SubmissionStarted>(
         `/interviews/${interviewId}/submissions`,
         { language, code }
       );
+      setConfirming(false);
+      setSubmitting(false);
       await pollReview(started.job_id);
     } catch (err) {
+      setConfirming(false);
+      setSubmitting(false);
       setError(err instanceof ApiError ? err.message : "Could not submit your solution.");
       await refresh();
     }
@@ -314,14 +320,20 @@ export function CodeEditorPanel({
               : `Submitted · ${submission.language} · ${submission.line_count} lines. Keep talking it through with the interviewer.`}
           </p>
         ) : confirming ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Confirm submission" className="flex flex-wrap items-center gap-2">
             <p className="text-sm">
               Submit this {language} solution? You can submit only once for this problem.
             </p>
-            <Button type="button" onClick={handleSubmit}>
-              Yes, submit
+            <Button type="button" onClick={handleSubmit} loading={submitting}>
+              {submitting ? "Submitting…" : "Yes, submit"}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setConfirming(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirming(false)}
+              disabled={submitting}
+              autoFocus
+            >
               Keep editing
             </Button>
           </div>

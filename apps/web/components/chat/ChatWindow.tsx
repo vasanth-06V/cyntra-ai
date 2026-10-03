@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
@@ -25,13 +26,14 @@ export function ChatWindow({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [messages]);
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSend(e?: React.FormEvent) {
+    e?.preventDefault();
     const content = input.trim();
     if (!content || !provider || sending) return;
 
@@ -80,6 +82,8 @@ export function ChatWindow({
       // the user saw (retrying would otherwise store the question twice).
     } finally {
       setSending(false);
+      // The field was disabled while the reply streamed; hand the cursor back.
+      setTimeout(() => inputRef.current?.focus(), 0);
     }
   }
 
@@ -92,18 +96,34 @@ export function ChatWindow({
           </EmptyState>
         )}
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+          <MessageBubble key={m.id} message={m} copyable />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border bg-background/50 p-3">
+      {error && (
+        <Alert role="alert" className="mx-3 mb-0 mt-3">
+          {error}
+        </Alert>
+      )}
+
+      {validProviders.length === 0 && (
+        <p className="mx-3 mt-3 text-sm text-muted-foreground">
+          No working key yet.{" "}
+          <Link href="/settings/api-keys" className="font-medium text-primary underline-offset-4 hover:underline">
+            Add one in API Keys
+          </Link>{" "}
+          to start chatting.
+        </p>
+      )}
+
+      <form onSubmit={handleSend} className="flex items-end gap-2 border-t border-border bg-background/50 p-3">
         <select
           value={provider ?? ""}
           aria-label="Model provider"
           onChange={(e) => setProvider(e.target.value as ProviderName)}
           disabled={validProviders.length === 0}
-          className="field max-w-[8.5rem] sm:max-w-none"
+          className="field h-10 max-w-[8.5rem] sm:max-w-none"
         >
           {validProviders.length === 0 ? (
             <option value="">No valid keys</option>
@@ -115,25 +135,30 @@ export function ChatWindow({
             ))
           )}
         </select>
-        <input
+        <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Message…"
+          onKeyDown={(e) => {
+            // Enter sends, Shift+Enter adds a line (not while an IME is composing).
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void handleSend();
+            }
+          }}
+          placeholder="Message… (Enter to send, Shift+Enter for a new line)"
           aria-label="Message"
-          disabled={!provider || sending}
-          className="field min-w-0 flex-1"
+          rows={1}
+          maxLength={8000}
+          readOnly={sending}
+          disabled={!provider}
+          className="field max-h-40 min-h-10 min-w-0 flex-1 resize-none [field-sizing:content]"
         />
         <Button type="submit" loading={sending} disabled={!provider || !input.trim()}>
           <SendIcon size={16} />
           Send
         </Button>
       </form>
-
-      {error && (
-        <Alert role="alert" className="m-3 mt-0">
-          {error}
-        </Alert>
-      )}
     </div>
   );
 }

@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { ListRow } from "@/components/ui/ListRow";
+import { useToast } from "@/components/ui/Toast";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { ListSkeleton } from "@/components/ui/Skeleton";
-import { ReportIcon } from "@/components/ui/icons";
+import { ReportIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
 import { timeLeft } from "@/lib/reports/format";
 import { useReportGeneration } from "@/lib/reports/useReportGeneration";
 import { INTERVIEW_TYPE_LABELS, type Interview, type InterviewType } from "@/types/interviews";
@@ -21,10 +22,13 @@ const typeLabel = (t: string) => INTERVIEW_TYPE_LABELS[t as InterviewType] ?? t;
 
 export function ReportsView() {
   const router = useRouter();
+  const confirm = useConfirm();
+  const { toast } = useToast();
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   const openReport = useCallback((id: string) => router.push(`/reports/${id}`), [router]);
   const generation = useReportGeneration(openReport);
@@ -37,12 +41,31 @@ export function ReportsView() {
       .then(([r, i]) => {
         setReports(r);
         setInterviews(i.filter((x) => x.status === "completed"));
+        setLoadError(null);
       })
       .catch((err) =>
         setLoadError(err instanceof ApiError ? err.message : "Could not load your reports.")
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [attempt]);
+
+  async function handleDelete(r: ReportSummary) {
+    const ok = await confirm({
+      title: "Delete this report?",
+      description: `The ${typeLabel(r.interview_type)} report (${r.overall_score}/100) will be removed now instead of after 7 days. The interview stays, so you can write a new report for it.`,
+      confirmLabel: "Delete report",
+      tone: "danger",
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/reports/${r.interview_id}`);
+        } catch (err) {
+          throw new Error(err instanceof ApiError ? err.message : "Could not delete the report.");
+        }
+        setReports((prev) => prev.filter((x) => x.interview_id !== r.interview_id));
+      },
+    });
+    if (ok) toast({ tone: "success", title: "Report deleted" });
+  }
 
   const withReport = new Set(reports.map((r) => r.interview_id));
   const waiting = interviews.filter((i) => !withReport.has(i.id));
@@ -59,9 +82,22 @@ export function ReportsView() {
           <ListSkeleton rows={3} />
         </div>
       ) : loadError ? (
-        <Alert role="alert" className="mt-6">
-          {loadError}
-        </Alert>
+        <div className="mt-6 flex max-w-3xl flex-col items-start gap-3">
+          <Alert role="alert" className="w-full">
+            {loadError}
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+        </div>
       ) : (
         <div className="mt-6 flex max-w-3xl flex-col gap-10">
           <section aria-label="Your reports">
@@ -71,27 +107,36 @@ export function ReportsView() {
                 No reports yet. Finish an interview, then get its report below.
               </EmptyState>
             ) : (
-              <div className="stagger mt-3 flex flex-col gap-2">
+              <ul className="stagger mt-3 flex flex-col gap-2">
                 {reports.map((r) => (
-                  <Link key={r.interview_id} href={`/reports/${r.interview_id}`} className="group block rounded-xl">
-                    <Card interactive className="flex items-center justify-between gap-4 p-4">
-                      <div className="flex min-w-0 items-center gap-4">
-                        <ScoreRing value={r.overall_score} size={52} stroke={5} showValue={false} />
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{typeLabel(r.interview_type)}</p>
-                          <p className="text-xs text-muted-foreground tabular-nums">
-                            {new Date(r.created_at).toLocaleString()} · {timeLeft(r.expires_at)}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-lg font-semibold tabular-nums">
-                        {r.overall_score}
-                        <span className="text-xs font-normal text-muted-foreground">/100</span>
-                      </span>
-                    </Card>
-                  </Link>
+                  <li key={r.interview_id}>
+                    <ListRow
+                      href={`/reports/${r.interview_id}`}
+                      leading={<ScoreRing value={r.overall_score} size={44} stroke={5} showValue={false} />}
+                      title={`${typeLabel(r.interview_type)} report`}
+                      meta={`${new Date(r.created_at).toLocaleString()} · ${timeLeft(r.expires_at)}`}
+                      trailing={
+                        <span className="text-lg font-semibold tabular-nums">
+                          {r.overall_score}
+                          <span className="text-xs font-normal text-muted-foreground">/100</span>
+                        </span>
+                      }
+                      actions={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDelete(r)}
+                          aria-label={`Delete ${typeLabel(r.interview_type)} report`}
+                          className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+                        >
+                          <TrashIcon size={14} />
+                        </Button>
+                      }
+                    />
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </section>
 
@@ -102,35 +147,38 @@ export function ReportsView() {
                 Every completed interview already has a report.
               </p>
             ) : (
-              <div className="stagger mt-3 flex flex-col gap-2">
+              <ul className="stagger mt-3 flex flex-col gap-2">
                 {waiting.map((i) => {
                   const busy = generation.busyId === i.id;
                   return (
-                    <Card key={i.id} className="flex items-center justify-between gap-3 p-4">
-                      <div>
-                        <p className="text-sm font-medium">{typeLabel(i.type)}</p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                          {new Date(i.created_at).toLocaleString()}
-                        </p>
-                        {busy && (
-                          <p role="status" className="mt-1 text-xs text-muted-foreground">
-                            {generation.progress ?? "Working…"}
-                          </p>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        loading={busy}
-                        disabled={generation.busyId !== null}
-                        onClick={() => void generation.start(i.id)}
-                      >
-                        {busy ? "Writing…" : "Get my report"}
-                      </Button>
-                    </Card>
+                    <li key={i.id}>
+                      <ListRow
+                        title={typeLabel(i.type)}
+                        meta={new Date(i.created_at).toLocaleString()}
+                        badge={
+                          busy ? (
+                            <span role="status" className="text-xs text-muted-foreground">
+                              {generation.progress ?? "Working…"}
+                            </span>
+                          ) : undefined
+                        }
+                        actions={
+                          <Button
+                            type="button"
+                            variant="outline"
+                            loading={busy}
+                            disabled={generation.busyId !== null}
+                            onClick={() => void generation.start(i.id)}
+                            aria-label={`Get my report for the ${typeLabel(i.type)} interview`}
+                          >
+                            {busy ? "Writing…" : "Get my report"}
+                          </Button>
+                        }
+                      />
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             )}
             {generation.error && (
               <Alert role="alert" className="mt-3">

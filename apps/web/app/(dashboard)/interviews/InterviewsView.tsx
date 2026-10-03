@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { LinkButton } from "@/components/ui/LinkButton";
+import { ListRow } from "@/components/ui/ListRow";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
-import { ChevronRightIcon, MicIcon } from "@/components/ui/icons";
+import { ChevronRightIcon, MicIcon, PlusIcon, RefreshIcon } from "@/components/ui/icons";
 import { INTERVIEW_TYPE_LABELS, type Interview, type InterviewStatus } from "@/types/interviews";
 
 const STATUS_TONE: Record<InterviewStatus, Tone> = {
@@ -20,20 +20,43 @@ const STATUS_TONE: Record<InterviewStatus, Tone> = {
   aborted: "neutral",
 };
 
+const PAGE_SIZE = 50;
+
 export function InterviewsView() {
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     apiClient
       .get<Interview[]>("/interviews")
-      .then(setInterviews)
+      .then((list) => {
+        setInterviews(list);
+        setHasMore(list.length >= PAGE_SIZE);
+        setError(null);
+      })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Could not load interviews.")
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [attempt]);
+
+  // The API returns the newest 50 at a time; older ones are fetched on request.
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const next = await apiClient.get<Interview[]>(`/interviews?limit=${PAGE_SIZE}&offset=${interviews.length}`);
+      setInterviews((prev) => [...prev, ...next.filter((n) => !prev.some((p) => p.id === n.id))]);
+      setHasMore(next.length >= PAGE_SIZE);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not load older interviews.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <div>
@@ -41,51 +64,70 @@ export function InterviewsView() {
         title="Interviews"
         description="Timed mock interviews built from your resume and a job description."
         actions={
-          <Link href="/interviews/setup" className="rounded-lg">
-            <Button>Start new interview</Button>
-          </Link>
+          <LinkButton href="/interviews/setup">
+            <PlusIcon size={16} />
+            Start new interview
+          </LinkButton>
         }
       />
 
       {loading ? (
         <ListSkeleton className="mt-6" rows={4} />
       ) : error ? (
-        <Alert role="alert" className="mt-6">
-          {error}
-        </Alert>
+        <div className="mt-6 flex flex-col items-start gap-3">
+          <Alert role="alert" className="w-full">
+            {error}
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+        </div>
       ) : interviews.length === 0 ? (
-        <EmptyState className="mt-6" icon={<MicIcon size={20} />} title="No interviews yet">
-          No interviews yet -- start one above.
+        <EmptyState
+          className="mt-6"
+          icon={<MicIcon size={20} />}
+          title="No interviews yet"
+          action={<LinkButton href="/interviews/setup" variant="outline" size="sm">Set up your first interview</LinkButton>}
+        >
+          A mock interview takes about an hour and is built from your resume and a job description.
         </EmptyState>
       ) : (
-        <div className="stagger mt-6 flex flex-col gap-2">
+        <ul className="stagger mt-6 flex max-w-3xl flex-col gap-2" aria-label="Your interviews">
           {interviews.map((iv) => (
-            <Link key={iv.id} href={`/interviews/${iv.id}`} className="group block rounded-xl">
-              <Card interactive className="flex items-center justify-between gap-3 p-4">
-                <div className="flex min-w-0 items-center gap-3.5">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-                    <MicIcon size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{INTERVIEW_TYPE_LABELS[iv.type]}</p>
-                    <p className="text-xs text-muted-foreground tabular-nums">
-                      {new Date(iv.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Badge tone={STATUS_TONE[iv.status] ?? "neutral"} className="capitalize">
-                    {iv.status.replace(/_/g, " ")}
-                  </Badge>
-                  <ChevronRightIcon
-                    size={18}
-                    className="text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transform-none"
-                  />
-                </div>
-              </Card>
-            </Link>
+            <li key={iv.id}>
+              <ListRow
+                href={`/interviews/${iv.id}`}
+                icon={<MicIcon size={18} />}
+                title={INTERVIEW_TYPE_LABELS[iv.type] ?? iv.type}
+                meta={new Date(iv.created_at).toLocaleString()}
+                trailing={
+                  <>
+                    <Badge tone={STATUS_TONE[iv.status] ?? "neutral"} className="capitalize">
+                      {iv.status.replace(/_/g, " ")}
+                    </Badge>
+                    <ChevronRightIcon
+                      size={18}
+                      className="text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transform-none"
+                    />
+                  </>
+                }
+              />
+            </li>
           ))}
-        </div>
+        </ul>
+      )}
+      {hasMore && !loading && !error && (
+        <Button variant="outline" className="mt-4" onClick={() => void loadMore()} loading={loadingMore}>
+          Show older interviews
+        </Button>
       )}
     </div>
   );

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { apiClient } from "@/lib/api-client/fastapi";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { RefreshIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 interface UsageRow {
@@ -16,13 +18,47 @@ interface UsageRow {
 
 export function UsageToday() {
   const [rows, setRows] = useState<UsageRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     apiClient
       .get<UsageRow[]>("/usage")
-      .then(setRows)
-      .catch(() => setRows([]));
-  }, []);
+      .then((r) => {
+        if (!cancelled) setRows(r);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  if (failed) {
+    return (
+      <Card className="p-5">
+        <h2 className="text-sm font-semibold">Used today</h2>
+        <p role="alert" className="mt-2 text-sm text-muted-foreground">
+          Could not load today&apos;s usage.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            setFailed(false);
+            setRows(null);
+            setAttempt((n) => n + 1);
+          }}
+        >
+          <RefreshIcon size={14} />
+          Try again
+        </Button>
+      </Card>
+    );
+  }
 
   if (rows === null) {
     return (

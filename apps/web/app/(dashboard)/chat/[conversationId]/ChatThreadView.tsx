@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { ChatWindow } from "@/components/chat/ChatWindow";
+import Link from "next/link";
 import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { RefreshIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { ChatMessage } from "@/types/chat";
 import type { ProviderKey, ProviderName } from "@/types/keys";
@@ -12,6 +15,7 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [validProviders, setValidProviders] = useState<ProviderName[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     Promise.all([
@@ -29,10 +33,32 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Could not load this conversation.")
       );
-  }, [conversationId]);
+  }, [conversationId, attempt]);
 
   if (error) {
-    return <Alert role="alert">{error}</Alert>;
+    return (
+      <div className="flex max-w-xl flex-col items-start gap-3">
+        <Alert role="alert" className="w-full">
+          {error}
+        </Alert>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setError(null);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+          <Link href="/chat" className="text-sm font-medium text-primary underline-offset-4 hover:underline">
+            Back to chats
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (messages === null) {

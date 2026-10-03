@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/Toast";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ListSkeleton } from "@/components/ui/Skeleton";
-import { BookIcon } from "@/components/ui/icons";
+import { BookIcon, PencilIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
 import {
   INTERVIEW_TYPE_LABELS,
   type InterviewType,
@@ -21,6 +23,9 @@ const CODING_TYPES: InterviewType[] = ["coding", "webd", "sde"];
 const INTERVIEW_TYPES = Object.keys(INTERVIEW_TYPE_LABELS) as InterviewType[];
 
 export function QuestionBankView() {
+  const confirm = useConfirm();
+  const { toast } = useToast();
+  const questionRef = useRef<HTMLTextAreaElement>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [filterType, setFilterType] = useState<InterviewType | "all">("all");
   const [loading, setLoading] = useState(true);
@@ -82,6 +87,10 @@ export function QuestionBankView() {
     setDifficulty(q.difficulty ? String(q.difficulty) : "");
     setSolutionCode(q.solution_code ?? "");
     setSolutionLanguage(q.solution_language ?? "");
+    setFormError(null);
+    // The form sits above a long list: bring it into view and put the cursor in it.
+    questionRef.current?.scrollIntoView?.({ block: "center" });
+    questionRef.current?.focus({ preventScroll: true });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -121,7 +130,9 @@ export function QuestionBankView() {
           difficulty: difficulty ? Number(difficulty) : undefined,
         });
       }
+      const wasEditing = Boolean(editingId);
       resetForm();
+      toast({ tone: "success", title: wasEditing ? "Question updated" : "Question added" });
       await load();
     } catch (err) {
       setFormError(
@@ -132,14 +143,30 @@ export function QuestionBankView() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm("Delete this question from the bank?")) return;
-    const previous = questions;
-    setQuestions((prev) => prev.filter((q) => q.id !== id));
-    try {
-      await apiClient.delete(`/interviews/question-bank/${id}`);
-    } catch {
-      setQuestions(previous);
+  async function handleDelete(q: Question) {
+    const preview = q.question.length > 90 ? `${q.question.slice(0, 90)}…` : q.question;
+    const ok = await confirm({
+      title: "Delete this question?",
+      description: (
+        <>
+          It will be removed from the bank and no longer used to build interviews:{" "}
+          <span className="text-foreground">&ldquo;{preview}&rdquo;</span>
+        </>
+      ),
+      confirmLabel: "Delete question",
+      tone: "danger",
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/interviews/question-bank/${q.id}`);
+        } catch (err) {
+          throw new Error(err instanceof ApiError ? err.message : "Could not delete this question.");
+        }
+        setQuestions((prev) => prev.filter((x) => x.id !== q.id));
+      },
+    });
+    if (ok) {
+      if (editingId === q.id) resetForm();
+      toast({ tone: "success", title: "Question deleted" });
     }
   }
 
@@ -173,22 +200,32 @@ export function QuestionBankView() {
           </select>
 
           <textarea
+            ref={questionRef}
             value={questionText}
             onChange={(e) => setQuestionText(e.target.value)}
-            placeholder="Question text…"
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="Question text… (Ctrl+Enter to save)"
+            aria-label="Question text"
             rows={3}
+            maxLength={4000}
             required
             className="field"
           />
 
           <input
+            aria-label="Tags"
             value={tagsText}
             onChange={(e) => setTagsText(e.target.value)}
             placeholder="Tags, comma separated (optional)"
             className="field"
           />
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 sm:flex-nowrap">
             <input
               value={topicText}
               onChange={(e) => setTopicText(e.target.value)}
@@ -239,6 +276,12 @@ export function QuestionBankView() {
             </div>
           )}
 
+          {editingId && (
+            <p className="text-xs text-muted-foreground">
+              Topic and difficulty can be changed here but not cleared once saved.
+            </p>
+          )}
+
           {formError && <Alert role="alert">{formError}</Alert>}
 
           <div className="flex gap-2">
@@ -276,9 +319,22 @@ export function QuestionBankView() {
       {loading ? (
         <ListSkeleton className="mt-4" rows={3} />
       ) : loadError ? (
-        <Alert role="alert" className="mt-4">
-          {loadError}
-        </Alert>
+        <div className="mt-4 flex flex-col items-start gap-3">
+          <Alert role="alert" className="w-full">
+            {loadError}
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              void load();
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+        </div>
       ) : visibleQuestions.length === 0 ? (
         <EmptyState className="mt-4" icon={<BookIcon size={20} />} title="No questions yet">
           No questions yet.
@@ -305,16 +361,25 @@ export function QuestionBankView() {
                   )}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(q)}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => startEdit(q)}
+                    aria-label={`Edit question: ${q.question.slice(0, 40)}`}
+                  >
+                    <PencilIcon size={14} />
                     Edit
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(q.id)}
+                    onClick={() => handleDelete(q)}
+                    aria-label={`Delete question: ${q.question.slice(0, 40)}`}
                     className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
                   >
+                    <TrashIcon size={14} />
                     Delete
                   </Button>
                 </div>

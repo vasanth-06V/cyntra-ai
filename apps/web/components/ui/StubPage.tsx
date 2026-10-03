@@ -13,7 +13,7 @@ export function StubPage({
     <div>
       <PageHeader title={title} description={description} />
       <EmptyState className="mt-6" icon={<ClockIcon size={20} />}>
-        Coming in a later build phase.
+        Not available yet. This page is planned for a later release.
       </EmptyState>
     </div>
   );

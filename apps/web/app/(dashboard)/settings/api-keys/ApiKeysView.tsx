@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { RefreshIcon } from "@/components/ui/icons";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { UsageToday } from "@/components/settings/UsageToday";
@@ -13,16 +15,20 @@ export function ApiKeysView() {
   const [keys, setKeys] = useState<ProviderKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     apiClient
       .get<ProviderKey[]>("/keys")
-      .then(setKeys)
+      .then((k) => {
+        setKeys(k);
+        setError(null);
+      })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Could not load keys.")
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [attempt]);
 
   return (
     <div className="max-w-3xl">
@@ -38,9 +44,22 @@ export function ApiKeysView() {
           <Skeleton className="h-44 w-full rounded-xl" />
         </div>
       ) : error ? (
-        <Alert role="alert" className="mt-6">
-          {error}
-        </Alert>
+        <div className="mt-6 flex flex-col items-start gap-3">
+          <Alert role="alert" className="w-full">
+            {error}
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+        </div>
       ) : (
         <div className="stagger mt-6 flex flex-col gap-4">
           <ProviderKeySection

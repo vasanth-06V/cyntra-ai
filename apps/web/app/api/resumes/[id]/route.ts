@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { deleteFromStorage } from "@/lib/storage";
 
+/** Storage clean-up must never hold the response hostage (a dead storage endpoint can hang for a long time). */
+const STORAGE_DELETE_TIMEOUT_MS = 8000;
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -27,21 +30,34 @@ export async function DELETE(
     return NextResponse.json({ error: "Resume not found" }, { status: 404 });
   }
 
-  const { error } = await supabase
+  // Ask for the deleted rows back: a delete that matched nothing (for example
+  // a policy hiding the row) must not be reported as a success.
+  const { data: deleted, error } = await supabase
     .from("resumes")
     .delete()
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id");
 
   if (error) {
     // Interviews that used this resume are kept (their link is cleared by the database).
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json(
+      { error: "The resume could not be deleted. Please refresh and try again." },
+      { status: 409 }
+    );
+  }
 
-  // The row is gone; a storage hiccup shouldn't turn that into an error.
-  await deleteFromStorage(resume.file_key).catch((err) => {
-    console.error("Could not delete resume object from storage", err);
-  });
+  // The row is gone; a storage hiccup shouldn't turn that into an error, and
+  // it shouldn't make the user wait either.
+  await Promise.race([
+    deleteFromStorage(resume.file_key).catch((err) => {
+      console.error("Could not delete resume object from storage", err);
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, STORAGE_DELETE_TIMEOUT_MS)),
+  ]);
 
   return new NextResponse(null, { status: 204 });
 }

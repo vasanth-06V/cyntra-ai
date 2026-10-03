@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 import { MotionProvider } from "@/lib/theme/MotionProvider";
 import { ThemeProvider } from "@/lib/theme/ThemeProvider";
 import "./globals.css";
@@ -28,7 +30,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ThemeProvider>
-          <MotionProvider>{children}</MotionProvider>
+          <MotionProvider>
+            <ToastProvider>
+              <ConfirmProvider>{children}</ConfirmProvider>
+            </ToastProvider>
+          </MotionProvider>
         </ThemeProvider>
       </body>
     </html>

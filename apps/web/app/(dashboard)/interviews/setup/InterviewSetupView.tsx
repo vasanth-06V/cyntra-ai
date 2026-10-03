@@ -9,7 +9,9 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FormSkeleton } from "@/components/ui/Skeleton";
-import { FileIcon, KeyIcon } from "@/components/ui/icons";
+import { FileIcon, KeyIcon, RefreshIcon } from "@/components/ui/icons";
+import { LinkButton } from "@/components/ui/LinkButton";
+import { fetchResumes, resumeName } from "@/lib/resumes";
 import { LoadingScene } from "@/components/three/LoadingScene";
 import {
   INTERVIEW_TYPE_LABELS,
@@ -22,6 +24,8 @@ import type { Resume } from "@/types/resumes";
 
 const INTERVIEW_TYPES = Object.keys(INTERVIEW_TYPE_LABELS) as InterviewType[];
 
+const JD_MIN = 10;
+const JD_MAX = 20000;
 const POLL_EVERY_MS = 1500;
 const GIVE_UP_AFTER_MS = 4 * 60 * 1000;
 
@@ -47,13 +51,13 @@ export function InterviewSetupView() {
     };
   }, []);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/resumes").then((res) => res.json()),
-      apiClient.get<ProviderKey[]>("/keys"),
-    ])
+    Promise.all([fetchResumes(), apiClient.get<ProviderKey[]>("/keys")])
       .then(([resumeData, keys]: [Resume[], ProviderKey[]]) => {
+        setLoadError(null);
         const processed = resumeData.filter((r) => r.parsed_text);
         setResumes(processed);
         if (processed[0]) setResumeId(processed[0].id);
@@ -70,14 +74,17 @@ export function InterviewSetupView() {
         setProvider(providers[0]);
       })
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Could not load resumes or keys.")
+        setLoadError(err instanceof Error ? err.message : "Could not load resumes or keys.")
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [attempt]);
+
+  const jdLength = jdText.trim().length;
+  const jdTooShort = jdLength > 0 && jdLength < JD_MIN;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!resumeId || !provider || !jdText.trim()) return;
+    if (!resumeId || !provider || jdLength < JD_MIN || jdText.length > JD_MAX) return;
 
     setStarting(true);
     setProgress(null);
@@ -142,20 +149,48 @@ export function InterviewSetupView() {
 
       {loading ? (
         <FormSkeleton className="mt-6 max-w-xl" />
+      ) : loadError ? (
+        <div className="mt-6 flex max-w-xl flex-col items-start gap-3">
+          <Alert role="alert" className="w-full">
+            {loadError}
+          </Alert>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLoading(true);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            <RefreshIcon size={14} />
+            Try again
+          </Button>
+        </div>
       ) : resumes.length === 0 ? (
-        <>
-          {error && (
-            <Alert role="alert" className="mt-6">
-              {error}
-            </Alert>
-          )}
-          <EmptyState className="mt-6" icon={<FileIcon size={20} />} title="No processed resume yet">
-            Upload and process a resume first, from the Resumes page.
-          </EmptyState>
-        </>
+        <EmptyState
+          className="mt-6"
+          icon={<FileIcon size={20} />}
+          title="No processed resume yet"
+          action={
+            <LinkButton href="/resumes" variant="outline" size="sm">
+              Go to Resumes
+            </LinkButton>
+          }
+        >
+          Upload a resume and let it finish processing, then come back to set up your interview.
+        </EmptyState>
       ) : validProviders.length === 0 ? (
-        <EmptyState className="mt-6" icon={<KeyIcon size={20} />} title="No usable key yet">
-          Add a valid Gemini or Groq key first, from Settings → API Keys.
+        <EmptyState
+          className="mt-6"
+          icon={<KeyIcon size={20} />}
+          title="No usable key yet"
+          action={
+            <LinkButton href="/settings/api-keys" variant="outline" size="sm">
+              Go to API Keys
+            </LinkButton>
+          }
+        >
+          Interviews run on Gemini or Groq. Add a valid key for one of them first.
         </EmptyState>
       ) : (
         <Card className="mt-6 max-w-xl p-5 sm:p-6">
@@ -191,7 +226,7 @@ export function InterviewSetupView() {
                 >
                   {resumes.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.file_key.split("/").pop()}
+                      {resumeName(r)}
                     </option>
                   ))}
                 </select>
@@ -226,13 +261,29 @@ export function InterviewSetupView() {
                 onChange={(e) => setJdText(e.target.value)}
                 placeholder="Paste the job description here…"
                 rows={8}
+                maxLength={JD_MAX}
+                aria-invalid={jdTooShort || undefined}
+                aria-describedby="iv-jd-hint"
                 className="field resize-y leading-6"
               />
+              <p
+                id="iv-jd-hint"
+                className={`flex justify-between gap-3 text-xs ${jdTooShort ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                <span>
+                  {jdTooShort
+                    ? `Add a little more: at least ${JD_MIN} characters.`
+                    : "The more detail, the better the questions match the role."}
+                </span>
+                <span className="tabular-nums">
+                  {jdText.length.toLocaleString()} / {JD_MAX.toLocaleString()}
+                </span>
+              </p>
             </div>
 
             {error && <Alert role="alert">{error}</Alert>}
 
-            <Button type="submit" size="lg" disabled={!provider || !jdText.trim()} className="self-start">
+            <Button type="submit" size="lg" disabled={!provider || jdLength < JD_MIN} className="self-start">
               Start interview
             </Button>
           </form>

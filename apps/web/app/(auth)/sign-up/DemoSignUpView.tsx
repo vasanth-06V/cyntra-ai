@@ -120,6 +120,8 @@ export function DemoSignUpView() {
             <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
               <input
                 type="text"
+                aria-label="Full name"
+                autoComplete="name"
                 placeholder="Full name (optional)"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
@@ -128,6 +130,8 @@ export function DemoSignUpView() {
               <input
                 type="email"
                 required
+                aria-label="Email"
+                autoComplete="email"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -136,7 +140,9 @@ export function DemoSignUpView() {
               <input
                 type="password"
                 required
-                placeholder="Password"
+                aria-label="Password"
+                autoComplete="new-password"
+                placeholder="Password (8+ characters, a number and a symbol)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="field"
@@ -144,6 +150,8 @@ export function DemoSignUpView() {
               <input
                 type="password"
                 required
+                aria-label="Confirm password"
+                autoComplete="new-password"
                 placeholder="Confirm password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

@@ -157,6 +157,7 @@
   --animate-fade-in: fade-in 220ms ease-out backwards;
   --animate-pop-in: pop-in 160ms var(--ease-out) backwards;
   --animate-slide-in: slide-in 360ms var(--ease-out) backwards;
+  --animate-toast-in: toast-in 260ms var(--ease-out) backwards;
   --animate-shimmer: shimmer 1.8s ease-in-out infinite;
   --animate-dot: dot 1.3s ease-in-out infinite;
   --animate-ring-pulse: ring-pulse 1.8s ease-out infinite;
@@ -188,6 +189,12 @@
     from {
       opacity: 0;
       transform: translateX(16px);
+    }
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
     }
   }
   @keyframes shimmer {
@@ -232,6 +239,8 @@
   html {
     -webkit-text-size-adjust: 100%;
     scroll-padding-top: 4.5rem;
+    /* Keeps the layout still when a dialog locks scrolling. */
+    scrollbar-gutter: stable;
   }
 
   body {

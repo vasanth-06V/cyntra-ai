@@ -189,3 +189,35 @@ export function GoogleIcon({ size = 18, ...props }: IconProps) {
     </svg>
   );
 }
+
+export const TrashIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4.5h6V7" />
+  </Icon>
+);
+export const CopyIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V6a2 2 0 0 1 2-2h8" />
+  </Icon>
+);
+export const RefreshIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 11a8 8 0 0 0-14-4.5L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4.5L20 15M20 20v-5h-5" />
+  </Icon>
+);
+export const PlusIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+export const ArrowLeftIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19 12H5m6-6-6 6 6 6" />
+  </Icon>
+);
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m4 20 1-4L16.5 4.5a2 2 0 0 1 3 3L8 19l-4 1ZM14 7l3 3" />
+  </Icon>
+);

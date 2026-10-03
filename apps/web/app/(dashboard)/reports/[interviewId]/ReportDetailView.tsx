@@ -8,6 +8,9 @@ import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/Toast";
+import { ArrowLeftIcon, RefreshIcon, TrashIcon } from "@/components/ui/icons";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { ScoreRing } from "@/components/ui/ScoreRing";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -27,21 +30,26 @@ function Quote({ text }: { text: string | null }) {
 
 export function ReportDetailView({ interviewId }: { interviewId: string }) {
   const router = useRouter();
+  const confirm = useConfirm();
+  const { toast } = useToast();
   const [data, setData] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<{ message: string; gone: boolean } | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     apiClient
       .get<ReportResponse>(`/reports/${interviewId}`)
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setError(null);
+      })
       .catch((err) =>
         setError({
           message: err instanceof ApiError ? err.message : "Could not load this report.",
           gone: err instanceof ApiError && (err.status === 404 || err.status === 410),
         })
       );
-  }, [interviewId]);
+  }, [interviewId, attempt]);
 
   if (error) {
     return (
@@ -49,12 +57,27 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
         <Alert role="alert" tone={error.gone ? "info" : "danger"}>
           {error.message}
         </Alert>
-        <Link
-          href="/reports"
-          className="mt-4 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
-        >
-          Back to reports
-        </Link>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {!error.gone && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setError(null);
+                setAttempt((n) => n + 1);
+              }}
+            >
+              <RefreshIcon size={14} />
+              Try again
+            </Button>
+          )}
+          <Link
+            href="/reports"
+            className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Back to reports
+          </Link>
+        </div>
       </div>
     );
   }
@@ -83,19 +106,31 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
     const a = document.createElement("a");
     a.href = url;
     a.download = `interview-report-${interviewId.slice(0, 8)}.md`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast({ tone: "success", title: "Report downloaded", description: a.download });
   }
 
   async function remove() {
-    if (!window.confirm("Delete this report now? This cannot be undone.")) return;
-    setDeleting(true);
-    try {
-      await apiClient.delete(`/reports/${interviewId}`);
+    const ok = await confirm({
+      title: "Delete this report now?",
+      description:
+        "It will be removed immediately instead of after 7 days. Use Download text or Save as PDF first if you want to keep a copy. The interview stays, so you can write a new report for it.",
+      confirmLabel: "Delete report",
+      tone: "danger",
+      onConfirm: async () => {
+        try {
+          await apiClient.delete(`/reports/${interviewId}`);
+        } catch (err) {
+          throw new Error(err instanceof ApiError ? err.message : "Could not delete the report.");
+        }
+      },
+    });
+    if (ok) {
+      toast({ tone: "success", title: "Report deleted" });
       router.push("/reports");
-    } catch (err) {
-      setDeleting(false);
-      setError({ message: err instanceof ApiError ? err.message : "Could not delete the report.", gone: false });
     }
   }
 
@@ -106,7 +141,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
           href="/reports"
           className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
-          ← All reports
+          <ArrowLeftIcon size={14} className="mr-1 inline" />
+          All reports
         </Link>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
@@ -115,7 +151,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
           <Button type="button" variant="outline" size="sm" onClick={download}>
             Download text
           </Button>
-          <Button type="button" variant="danger" size="sm" onClick={remove} loading={deleting}>
+          <Button type="button" variant="danger" size="sm" onClick={remove}>
+            <TrashIcon size={14} />
             Delete now
           </Button>
         </div>

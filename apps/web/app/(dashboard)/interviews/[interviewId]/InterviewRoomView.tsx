@@ -6,6 +6,9 @@ import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { useToast } from "@/components/ui/Toast";
+import { RefreshIcon } from "@/components/ui/icons";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
@@ -28,6 +31,8 @@ function toChatMessage(entry: TranscriptEntry): ChatMessage {
 
 export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const router = useRouter();
+  const confirm = useConfirm();
+  const { toast } = useToast();
   const [interview, setInterview] = useState<Interview | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [phase, setPhase] = useState("");
@@ -36,6 +41,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const answerRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   // The coding editor appears beside the chat while a problem is active; the
   // chat pauses while a submitted solution is being reviewed.
@@ -110,6 +117,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       .then(([iv, transcript]) => {
         setInterview(iv);
         setMessages(transcript.map(toChatMessage));
+        setLoadError(null);
         setPhase(iv.phase ?? "");
         if (iv.ends_at) {
           const remaining = (new Date(iv.ends_at).getTime() - Date.now()) / 60000;
@@ -119,10 +127,10 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       .catch((err) =>
         setLoadError(err instanceof ApiError ? err.message : "Could not load this interview.")
       );
-  }, [interviewId]);
+  }, [interviewId, attempt]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [messages]);
 
   // Ticks the displayed timer down client-side between turns, so it doesn't
@@ -135,12 +143,33 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     return () => clearInterval(id);
   }, [interview?.ends_at]);
 
-  async function handleComplete() {
+  async function completeInterview() {
     try {
       await apiClient.post(`/interviews/${interviewId}/complete`);
-      setInterview((prev) => (prev ? { ...prev, status: "completed" } : prev));
     } catch (err) {
-      setSendError(err instanceof ApiError ? err.message : "Could not end the interview.");
+      throw new Error(err instanceof ApiError ? err.message : "Could not end the interview.");
+    }
+    setInterview((prev) => (prev ? { ...prev, status: "completed" } : prev));
+  }
+
+  async function handleEnd() {
+    const ok = await confirm({
+      title: "End the interview now?",
+      description:
+        "This stops the timer and closes the room. You can't continue afterwards, but you can get a report for the answers so far.",
+      confirmLabel: "End interview",
+      tone: "danger",
+      onConfirm: completeInterview,
+    });
+    if (ok) toast({ tone: "success", title: "Interview ended", description: "You can now get your report." });
+  }
+
+  // Time ran out on its own: no question to ask, just close it.
+  async function autoComplete() {
+    try {
+      await completeInterview();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Could not end the interview.");
     }
   }
 
@@ -179,7 +208,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       ]);
       speakRef.current(response.message);
       if (response.is_final_phase && response.minutes_remaining <= 0) {
-        await handleComplete();
+        await autoComplete();
       }
     } catch (err) {
       // Keep the room; take the unsent bubble back out and restore the draft
@@ -200,7 +229,26 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     sendRef.current = (text) => void sendContent(text);
   });
 
-  if (loadError) return <Alert role="alert">{loadError}</Alert>;
+  if (loadError) {
+    return (
+      <div className="flex max-w-xl flex-col items-start gap-3">
+        <Alert role="alert" className="w-full">
+          {loadError}
+        </Alert>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setLoadError(null);
+            setAttempt((n) => n + 1);
+          }}
+        >
+          <RefreshIcon size={14} />
+          Try again
+        </Button>
+      </div>
+    );
+  }
   if (!interview) {
     return (
       <div role="status" className="fill-screen flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-md">
@@ -255,7 +303,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={handleComplete}
+              onClick={() => void handleEnd()}
               className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
             >
               End interview
@@ -303,26 +351,59 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           )}
 
           {isActive ? (
-            <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border bg-card p-3">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Your answer…"
-                aria-label="Your answer"
-                maxLength={4000}
-                disabled={sending || reviewing}
-                className="field min-w-0 flex-1"
-              />
-              <Button type="submit" loading={sending} disabled={reviewing || !input.trim()}>
-                {sending ? "Thinking…" : "Send"}
-              </Button>
-            </form>
+            <>
+              {sendError && (
+                <Alert role="alert" className="mx-3 mb-0 mt-2">
+                  {sendError}
+                </Alert>
+              )}
+              <form onSubmit={handleSend} className="flex items-end gap-2 border-t border-border bg-card p-3">
+                <textarea
+                  ref={answerRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter sends, Shift+Enter adds a line (not while an IME is composing).
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      void sendContent(input.trim());
+                    }
+                  }}
+                  placeholder="Your answer… (Enter to send, Shift+Enter for a new line)"
+                  aria-label="Your answer"
+                  rows={1}
+                  maxLength={4000}
+                  readOnly={sending}
+                  disabled={reviewing}
+                  className="field max-h-40 min-h-10 min-w-0 flex-1 resize-none [field-sizing:content]"
+                />
+                <Button type="submit" loading={sending} disabled={reviewing || !input.trim()}>
+                  {sending ? "Thinking…" : "Send"}
+                </Button>
+              </form>
+            </>
           ) : (
             <div className="border-t border-border bg-card p-5 text-center">
               <p className="mb-3 text-sm text-muted-foreground">
-                This interview is {interview.status}.
+                {interview.status === "setting_up"
+                  ? "This interview is still being set up (or setup did not finish). Refresh in a moment, or start a new one."
+                  : interview.status === "aborted"
+                    ? "This interview was stopped before it finished."
+                    : "This interview is finished."}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
+                {interview.status === "setting_up" && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setInterview(null);
+                      setAttempt((n) => n + 1);
+                    }}
+                  >
+                    <RefreshIcon size={14} />
+                    Refresh
+                  </Button>
+                )}
                 {interview.status === "completed" && (
                   <Button onClick={() => router.push("/reports")}>Get my report</Button>
                 )}
@@ -345,7 +426,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
         )}
       </div>
 
-      {sendError && (
+      {sendError && !isActive && (
         <Alert role="alert" className="m-3 mt-0">
           {sendError}
         </Alert>

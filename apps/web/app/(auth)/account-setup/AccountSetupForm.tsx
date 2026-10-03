@@ -98,8 +98,9 @@ export function AccountSetupForm({
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Email</label>
+              <label htmlFor="as-email" className="text-xs font-medium text-muted-foreground">Email</label>
               <input
+                id="as-email"
                 type="email"
                 value={email}
                 disabled
@@ -110,11 +111,14 @@ export function AccountSetupForm({
             </div>
 
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label htmlFor="as-password" className="text-xs font-medium text-muted-foreground">
                 New password
               </label>
               <input
+                id="as-password"
                 type="password"
+                autoComplete="new-password"
+                aria-describedby="as-password-hint"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -122,12 +126,18 @@ export function AccountSetupForm({
               />
             </div>
 
+            <p id="as-password-hint" className="-mt-1 text-xs text-muted-foreground">
+              At least 8 characters, with a number and a symbol.
+            </p>
+
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label htmlFor="as-confirm" className="text-xs font-medium text-muted-foreground">
                 Confirm password
               </label>
               <input
+                id="as-confirm"
                 type="password"
+                autoComplete="new-password"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

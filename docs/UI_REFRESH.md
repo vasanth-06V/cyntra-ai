@@ -86,3 +86,27 @@ Easing `--ease-out: cubic-bezier(0.22, 1, 0.36, 1)`. Durations: hover/press 150 
 
 ### Deliberately not changed
 Everything under `lib/`, `types/`, `app/api/`, all data fetching and handlers, route paths, existing button/aria-label texts. The 3D scene still lazy-loads and still shows nothing for reduced motion.
+
+## 3. Round 2 changelog (functional audit and polish)
+
+See `docs/FRONTEND_GAPS.md` for the audit table and the open backend work.
+
+### New primitives (`components/ui`)
+- `ConfirmDialog` + `ConfirmProvider` / `useConfirm()`: promise-based, replaces every `window.confirm`. `role="alertdialog"`, `aria-labelledby` / `aria-describedby`, focus moves in (Cancel first for destructive actions), Tab and Shift+Tab are trapped, Escape and backdrop click cancel, focus returns to the opener (or to `#main` if the opener is gone), body scroll locked, `onConfirm` runs inside the dialog with a loading button and shows its failure inline. Motion is CSS (`animate-fade-in`, `animate-pop-in`), so the reduced-motion block covers it.
+- `Toast` / `useToast()`: success, info and error messages. Two persistent live regions (polite, assertive), auto-dismiss that pauses on hover or focus (errors stay 8 s, `duration: 0` stays until dismissed), optional action, max four at once, `animate-toast-in`.
+- `ListRow`: one row primitive for resumes, chats, interviews, reports. Title is the link and its hit area stretches over the row; actions sit above it, so no interactive element is nested in another. Optional icon tile, custom leading element, badges, trailing summary.
+- `LinkButton` + `button-styles.ts`: a link that looks like a `Button` (replaces `<Link><Button/></Link>`).
+- Icons: trash, copy, refresh, plus, arrow-left, pencil.
+
+### UI changes
+- Toasts and dialogs are mounted once in `app/layout.tsx` (inside `MotionProvider`), so auth and onboarding pages get them too.
+- List pages share one pattern: skeleton, load error with "Try again", friendly empty state with an action, list capped at a readable `max-w-3xl`.
+- Resumes: usage badge ("2 of 3 used"), upload disabled at the limit with the reason, status badge reads "Not processed yet", upload date, trash icon on delete.
+- Chat: auto-growing composer (Enter sends, Shift+Enter new line), copy button on replies, error shown above the composer instead of below it, delete and "Show older chats".
+- Interview room: answer box is a textarea like chat, errors sit directly above it, "End interview" asks first.
+- Forms: character counters and inline hints for job descriptions, real labels on the account setup and sign-up forms.
+- Header sign-out becomes icon-only below `sm` (the label stays for screen readers) to give the email and bell room at 375 px.
+- `html { scrollbar-gutter: stable }` so dialogs do not shift the page.
+
+### Tests
+Vitest now also runs component tests in jsdom (`// @vitest-environment jsdom` per file, `test/setup.ts`, `test/utils.tsx`). Dev-only dependencies added: `jsdom`, `@testing-library/react`, `@testing-library/dom`, `@testing-library/user-event`, `@testing-library/jest-dom`.
