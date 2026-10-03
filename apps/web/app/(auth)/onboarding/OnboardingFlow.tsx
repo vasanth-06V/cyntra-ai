@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { Button } from "@/components/ui/Button";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Alert } from "@/components/ui/Alert";
+import { AuthShell } from "@/components/ui/AuthShell";
+import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { ProviderKeySection } from "@/components/settings/ProviderKeySection";
 import type { ProviderKey } from "@/types/keys";
 
@@ -36,27 +38,28 @@ export function OnboardingFlow() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6">
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-        className="w-full max-w-lg"
-      >
-        <h1 className="text-xl font-semibold">Set up your AI providers</h1>
+    <AuthShell wide>
+      <Card tone="raised" className="p-6 sm:p-7">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-primary" aria-live="polite">
+          Step {step} of 2
+        </p>
+        <div aria-hidden="true" className="mt-2 flex gap-1.5">
+          <span className="h-1 flex-1 rounded-full bg-primary" />
+          <span className={`h-1 flex-1 rounded-full transition-colors duration-300 ${step === 2 ? "bg-primary" : "bg-border-strong"}`} />
+        </div>
+        <h1 className="mt-5 text-2xl font-semibold tracking-[-0.03em]">Set up your AI providers</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           CyntraAI is Bring-Your-Own-Key: you use your own API keys, we never
           see your usage costs.
         </p>
 
         {loading ? (
-          <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
+          <div role="status" className="mt-6 flex flex-col gap-3">
+            <span className="sr-only">Loading…</span>
+            <Skeleton className="h-40 w-full rounded-xl" />
+          </div>
         ) : error ? (
-          <p className="mt-6 text-sm text-destructive">{error}</p>
+          <Alert role="alert" className="mt-6">{error}</Alert>
         ) : step === 1 ? (
           <div className="mt-6 flex flex-col gap-4">
             <ProviderKeySection
@@ -89,7 +92,7 @@ export function OnboardingFlow() {
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="text-sm text-muted-foreground underline-offset-4 hover:underline cursor-pointer"
+                className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
               >
                 Back
               </button>
@@ -97,7 +100,7 @@ export function OnboardingFlow() {
             </div>
           </div>
         )}
-      </motion.div>
-    </div>
+      </Card>
+    </AuthShell>
   );
 }

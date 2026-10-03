@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { MicIcon } from "@/components/ui/icons";
 import { SILENCE_CHOICES_MS, type VoiceSettings } from "@/lib/voice/settings";
 import { listVoices } from "@/lib/voice/synthesizer";
 import { ERROR_TEXT, type useVoice } from "@/lib/voice/useVoice";
@@ -46,7 +47,7 @@ export function VoiceBar({
 
   if (!voice.supported) {
     return (
-      <p className="border-t border-border px-4 py-2 text-xs text-muted-foreground">
+      <p className="border-t border-border bg-background/60 px-4 py-2.5 text-xs text-muted-foreground">
         Voice isn&apos;t available in this browser (try Chrome or Edge). You can type your answers.
       </p>
     );
@@ -54,13 +55,14 @@ export function VoiceBar({
 
   if (!settings.enabled) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background/60 px-4 py-2.5">
         <p className="text-xs text-muted-foreground">
           {settings.consented
             ? "Answer out loud and hear the interviewer."
             : "Voice uses your browser's speech recognition — in Chrome and Edge your speech is processed by Google. Typing always works."}
         </p>
-        <Button type="button" variant="outline" onClick={onEnable}>
+        <Button type="button" variant="outline" size="sm" onClick={onEnable}>
+          <MicIcon size={14} />
           Turn on voice
         </Button>
       </div>
@@ -84,27 +86,31 @@ export function VoiceBar({
                 : "Microphone resting.";
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border px-4 py-2" aria-live="polite">
+    <div className="flex flex-col gap-2 border-t border-border bg-background/60 px-4 py-2.5" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p
           role="status"
-          className={`text-sm ${voice.error ? "text-destructive" : "text-muted-foreground"}`}
+          className={`flex items-center text-sm ${voice.error ? "text-destructive" : "text-muted-foreground"}`}
         >
           <span
             aria-hidden="true"
-            className={`mr-2 inline-block h-2 w-2 rounded-full ${
-              voice.listening ? "animate-pulse bg-green-500" : voice.speaking ? "bg-primary" : "bg-muted-foreground/40"
+            className={`mr-2.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${
+              voice.listening
+                ? "animate-ring-pulse bg-success text-success"
+                : voice.speaking
+                  ? "bg-primary ring-4 ring-primary/25"
+                  : "bg-muted-foreground/40"
             }`}
           />
           {status}
         </p>
         <div className="flex items-center gap-2">
           {voice.speaking && (
-            <Button type="button" variant="outline" onClick={voice.stopSpeaking}>
+            <Button type="button" variant="outline" size="sm" onClick={voice.stopSpeaking}>
               Stop speaking
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={onDisable}>
+          <Button type="button" variant="outline" size="sm" onClick={onDisable}>
             Turn off voice
           </Button>
         </div>
@@ -119,25 +125,25 @@ export function VoiceBar({
               aria-label="Your answer"
               rows={3}
               maxLength={4000}
-              className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="field"
             />
           ) : (
-            <p className="rounded-lg border border-dashed border-border px-3 py-2 text-sm">
+            <p className="rounded-lg border border-dashed border-border-strong bg-card px-3 py-2 text-sm leading-6">
               {voice.caption}
             </p>
           )}
           <div className="flex flex-wrap gap-2">
             {voice.pending && (
-              <Button type="button" variant="outline" onClick={voice.edit}>
+              <Button type="button" variant="outline" size="sm" onClick={voice.edit}>
                 Edit
               </Button>
             )}
             {voice.editing && (
-              <Button type="button" variant="outline" onClick={voice.resume}>
+              <Button type="button" variant="outline" size="sm" onClick={voice.resume}>
                 Keep listening
               </Button>
             )}
-            <Button type="button" onClick={onSendCaption} disabled={sending || reviewing || !voice.caption.trim()}>
+            <Button type="button" size="sm" onClick={onSendCaption} disabled={sending || reviewing || !voice.caption.trim()}>
               Send now
             </Button>
           </div>
@@ -145,14 +151,14 @@ export function VoiceBar({
       )}
 
       <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">Voice settings</summary>
+        <summary className="cursor-pointer font-medium transition-colors hover:text-foreground">Voice settings</summary>
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <label className="flex items-center justify-between gap-2">
             Send after silence of
             <select
               value={settings.silenceMs}
               onChange={(e) => onSettingsChange({ ...settings, silenceMs: Number(e.target.value) })}
-              className="rounded-lg border border-border bg-transparent px-2 py-1 text-sm"
+              className="field field-sm"
             >
               {SILENCE_CHOICES_MS.map((ms) => (
                 <option key={ms} value={ms}>
@@ -178,7 +184,7 @@ export function VoiceBar({
             <select
               value={settings.voiceName ?? ""}
               onChange={(e) => onSettingsChange({ ...settings, voiceName: e.target.value || null })}
-              className="max-w-[12rem] rounded-lg border border-border bg-transparent px-2 py-1 text-sm"
+              className="field field-sm max-w-[12rem]"
             >
               <option value="">Automatic</option>
               {voices.map((v) => (

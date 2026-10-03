@@ -4,21 +4,25 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { ScoreRing } from "@/components/ui/ScoreRing";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { scoreTone, toneText } from "@/components/ui/score";
 import { reportToMarkdown, resultLabel, timeLeft } from "@/lib/reports/format";
 import { INTERVIEW_TYPE_LABELS, type InterviewType } from "@/types/interviews";
 import type { ReportResponse } from "@/types/reports";
 
-function scoreColor(fraction: number): string {
-  if (fraction >= 0.75) return "text-green-600 dark:text-green-400";
-  if (fraction >= 0.5) return "text-yellow-600 dark:text-yellow-400";
-  return "text-destructive";
-}
-
 function Quote({ text }: { text: string | null }) {
   if (!text) return null;
-  return <blockquote className="mt-1 border-l-2 border-border pl-3 text-xs italic text-muted-foreground">“{text}”</blockquote>;
+  return (
+    <blockquote className="mt-1.5 border-l-2 border-primary/40 pl-3 text-xs italic leading-5 text-muted-foreground">
+      “{text}”
+    </blockquote>
+  );
 }
 
 export function ReportDetailView({ interviewId }: { interviewId: string }) {
@@ -42,16 +46,29 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
   if (error) {
     return (
       <div className="max-w-xl">
-        <p role="alert" className={`text-sm ${error.gone ? "text-muted-foreground" : "text-destructive"}`}>
+        <Alert role="alert" tone={error.gone ? "info" : "danger"}>
           {error.message}
-        </p>
-        <Link href="/reports" className="mt-4 inline-block text-sm underline">
+        </Alert>
+        <Link
+          href="/reports"
+          className="mt-4 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
           Back to reports
         </Link>
       </div>
     );
   }
-  if (!data) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!data) {
+    return (
+      <div role="status" className="mx-auto flex max-w-3xl flex-col gap-4">
+        <span className="sr-only">Loading…</span>
+        <Skeleton className="h-8 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-56 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   const { report } = data;
   const typeLabel = INTERVIEW_TYPE_LABELS[data.interview_type as InterviewType] ?? data.interview_type;
@@ -83,55 +100,61 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
   }
 
   return (
-    <article className="mx-auto flex max-w-3xl flex-col gap-4">
+    <article className="stagger mx-auto flex max-w-3xl flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <Link href="/reports" className="text-sm text-muted-foreground hover:underline">
+        <Link
+          href="/reports"
+          className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
           ← All reports
         </Link>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => window.print()}>
+          <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
             Save as PDF
           </Button>
-          <Button type="button" variant="outline" onClick={download}>
+          <Button type="button" variant="outline" size="sm" onClick={download}>
             Download text
           </Button>
-          <Button type="button" variant="outline" onClick={remove} disabled={deleting}>
+          <Button type="button" variant="danger" size="sm" onClick={remove} loading={deleting}>
             Delete now
           </Button>
         </div>
       </div>
 
       <header>
-        <h1 className="text-2xl font-semibold">Interview report — {typeLabel}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-[1.65rem] font-semibold leading-tight tracking-[-0.025em] sm:text-[1.9rem]">
+          Interview report — {typeLabel}
+        </h1>
+        <p className="mt-1.5 text-sm text-muted-foreground tabular-nums">
           {new Date(data.created_at).toLocaleString()} · {report.interview.minutes_used} min ·{" "}
           <span className="print:hidden">{timeLeft(data.expires_at)} · </span>
           available until {new Date(data.expires_at).toLocaleDateString()}
         </p>
       </header>
 
-      <Card className="flex flex-col items-center gap-1 p-6 text-center">
-        <span className={`text-5xl font-bold ${scoreColor(report.overall_score / 100)}`}>
-          {report.overall_score}
-          <span className="text-lg text-muted-foreground">/100</span>
-        </span>
-        <span className="text-sm font-medium">{report.band}</span>
-        {report.verdict && <p className="mt-2 max-w-xl text-sm text-muted-foreground">{report.verdict}</p>}
+      <Card tone="raised" className="brand-wash flex flex-col items-center gap-3 p-6 text-center sm:p-8">
+        <ScoreRing value={report.overall_score} size={176}>
+          out of 100
+        </ScoreRing>
+        <Badge tone={scoreTone(report.overall_score / 100)} className="text-sm">
+          {report.band}
+        </Badge>
+        {report.verdict && (
+          <p className="mt-1 max-w-xl text-sm leading-6 text-muted-foreground">{report.verdict}</p>
+        )}
       </Card>
 
       <Card className="p-5">
-        <h2 className="text-sm font-medium">Skills</h2>
-        <ul className="mt-3 flex flex-col gap-4">
+        <h2 className="text-sm font-semibold">Skills</h2>
+        <ul className="mt-4 flex flex-col gap-5">
           {report.dimensions.map((d) => (
             <li key={d.key}>
               <div className="flex items-center justify-between text-sm">
-                <span>{d.label}</span>
-                <span className={`font-medium ${scoreColor(d.score / 5)}`}>{d.score}/5</span>
+                <span className="font-medium">{d.label}</span>
+                <span className={`font-semibold tabular-nums ${toneText[scoreTone(d.score / 5)]}`}>{d.score}/5</span>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
-                <div className="h-full rounded-full bg-primary" style={{ width: `${(d.score / 5) * 100}%` }} />
-              </div>
-              {d.reason && <p className="mt-1 text-sm text-muted-foreground">{d.reason}</p>}
+              <ProgressBar fraction={d.score / 5} className="mt-2" />
+              {d.reason && <p className="mt-2 text-sm leading-6 text-muted-foreground">{d.reason}</p>}
               <Quote text={d.quote} />
             </li>
           ))}
@@ -140,17 +163,20 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
 
       <div className="grid gap-4 md:grid-cols-2">
         {[
-          { title: "What went well", items: report.strengths },
-          { title: "What to improve", items: report.improvements },
+          { title: "What went well", items: report.strengths, dot: "bg-success" },
+          { title: "What to improve", items: report.improvements, dot: "bg-warning" },
         ].map((group) => (
           <Card key={group.title} className="p-5">
-            <h2 className="text-sm font-medium">{group.title}</h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <span aria-hidden="true" className={`h-2 w-2 rounded-full ${group.dot}`} />
+              {group.title}
+            </h2>
             {group.items.length === 0 ? (
               <p className="mt-2 text-sm text-muted-foreground">Nothing specific to add.</p>
             ) : (
               <ul className="mt-3 flex flex-col gap-3">
                 {group.items.map((item, i) => (
-                  <li key={i} className="text-sm">
+                  <li key={i} className="text-sm leading-6">
                     {item.point}
                     <Quote text={item.quote} />
                   </li>
@@ -163,13 +189,13 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
 
       {report.coding.length > 0 && (
         <Card className="p-5">
-          <h2 className="text-sm font-medium">Coding round</h2>
+          <h2 className="text-sm font-semibold">Coding round</h2>
           <ul className="mt-3 flex flex-col gap-4">
             {report.coding.map((c) => (
               <li key={c.problem} className="text-sm">
                 <p className="font-medium">
                   Problem {c.problem} · {c.language}, {c.line_count} lines ·{" "}
-                  <span className={c.result === "correct" || c.result === "mostly_correct" ? "text-green-600 dark:text-green-400" : "text-destructive"}>
+                  <span className={c.result === "correct" || c.result === "mostly_correct" ? "text-success" : "text-destructive"}>
                     {resultLabel(c.result)}
                   </span>
                 </p>
@@ -193,7 +219,7 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
 
       {report.phase_notes.length > 0 && (
         <Card className="p-5">
-          <h2 className="text-sm font-medium">Phase by phase</h2>
+          <h2 className="text-sm font-semibold">Phase by phase</h2>
           <ul className="mt-3 flex flex-col gap-2 text-sm">
             {report.phase_notes.map((n) => (
               <li key={n.phase}>
@@ -207,7 +233,7 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
 
       {report.next_steps.length > 0 && (
         <Card className="p-5">
-          <h2 className="text-sm font-medium">Next steps</h2>
+          <h2 className="text-sm font-semibold">Next steps</h2>
           <ol className="mt-3 list-decimal pl-5 text-sm">
             {report.next_steps.map((s) => (
               <li key={s} className="mt-1">

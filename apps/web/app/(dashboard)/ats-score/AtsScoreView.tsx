@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { FormSkeleton } from "@/components/ui/Skeleton";
+import { FileIcon } from "@/components/ui/icons";
 import { ScoreBreakdown } from "@/components/ats/ScoreBreakdown";
 import type { ScoreResponse } from "@/types/ats";
 import { PROVIDER_INFO, type ProviderKey, type ProviderName } from "@/types/keys";
@@ -65,67 +71,95 @@ export function AtsScoreView() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold">ATS Score</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        See how well a resume matches a job description.
-      </p>
+      <PageHeader
+        title="ATS Score"
+        description="See how well a resume matches a job description."
+      />
 
       {loading ? (
-        <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
+        <FormSkeleton className="mt-6 max-w-2xl" />
       ) : resumes.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          Upload and process a resume first, from the Resumes page.
-        </div>
+        <>
+          {error && (
+            <Alert role="alert" className="mt-6">
+              {error}
+            </Alert>
+          )}
+          <EmptyState className="mt-6" icon={<FileIcon size={20} />} title="No processed resume yet">
+            Upload and process a resume first, from the Resumes page.
+          </EmptyState>
+        </>
       ) : (
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
-          <div className="flex gap-2">
-            <select
-              value={resumeId}
-              onChange={(e) => setResumeId(e.target.value)}
-              className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        <Card className="mt-6 max-w-2xl p-5 sm:p-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <label htmlFor="ats-resume" className="text-xs font-medium text-muted-foreground">
+                  Resume
+                </label>
+                <select
+                  id="ats-resume"
+                  value={resumeId}
+                  onChange={(e) => setResumeId(e.target.value)}
+                  className="field"
+                >
+                  {resumes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.file_key.split("/").pop()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:w-44">
+                <label htmlFor="ats-provider" className="text-xs font-medium text-muted-foreground">
+                  Model
+                </label>
+                <select
+                  id="ats-provider"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value as ProviderName)}
+                  disabled={validProviders.length === 0}
+                  className="field"
+                >
+                  {validProviders.length === 0 ? (
+                    <option>No valid keys</option>
+                  ) : (
+                    validProviders.map((p) => (
+                      <option key={p} value={p}>
+                        {PROVIDER_INFO[p].label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ats-jd" className="text-xs font-medium text-muted-foreground">
+                Job description
+              </label>
+              <textarea
+                id="ats-jd"
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste the job description here…"
+                rows={8}
+                className="field resize-y leading-6"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              loading={scoring}
+              disabled={!provider || !jdText.trim()}
+              className="self-start"
             >
-              {resumes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.file_key.split("/").pop()}
-                </option>
-              ))}
-            </select>
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as ProviderName)}
-              disabled={validProviders.length === 0}
-              className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            >
-              {validProviders.length === 0 ? (
-                <option>No valid keys</option>
-              ) : (
-                validProviders.map((p) => (
-                  <option key={p} value={p}>
-                    {PROVIDER_INFO[p].label}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+              {scoring ? "Scoring…" : "Check score"}
+            </Button>
 
-          <textarea
-            value={jdText}
-            onChange={(e) => setJdText(e.target.value)}
-            placeholder="Paste the job description here…"
-            rows={8}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-
-          <Button
-            type="submit"
-            disabled={scoring || !provider || !jdText.trim()}
-            className="self-start"
-          >
-            {scoring ? "Scoring…" : "Check score"}
-          </Button>
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </form>
+            {error && <Alert role="alert">{error}</Alert>}
+          </form>
+        </Card>
       )}
 
       {result && (

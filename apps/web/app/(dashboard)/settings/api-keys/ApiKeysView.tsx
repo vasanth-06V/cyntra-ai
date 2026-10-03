@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { UsageToday } from "@/components/settings/UsageToday";
 import { ProviderKeySection } from "@/components/settings/ProviderKeySection";
 import type { ProviderKey } from "@/types/keys";
@@ -22,18 +25,24 @@ export function ApiKeysView() {
   }, []);
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold">API Keys</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage the BYOK provider keys used across CyntraAI.
-      </p>
+    <div className="max-w-3xl">
+      <PageHeader
+        title="API Keys"
+        description="Manage the BYOK provider keys used across CyntraAI."
+      />
 
       {loading ? (
-        <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
+        <div role="status" className="mt-6 flex flex-col gap-4">
+          <span className="sr-only">Loading…</span>
+          <Skeleton className="h-52 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+        </div>
       ) : error ? (
-        <p className="mt-6 text-sm text-destructive">{error}</p>
+        <Alert role="alert" className="mt-6">
+          {error}
+        </Alert>
       ) : (
-        <div className="mt-6 flex flex-col gap-4">
+        <div className="stagger mt-6 flex flex-col gap-4">
           <ProviderKeySection
             provider="gemini"
             keys={keys}

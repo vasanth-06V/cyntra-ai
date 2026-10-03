@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Alert } from "@/components/ui/Alert";
+import { AuthShell } from "@/components/ui/AuthShell";
 
 const PASSWORD_MIN_LENGTH = 8;
 
@@ -88,18 +88,9 @@ export function AccountSetupForm({
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-6">
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-      >
-        <Card className="w-full max-w-sm p-8">
-          <h1 className="text-xl font-semibold">Welcome to CyntraAI</h1>
+    <AuthShell>
+        <Card tone="raised" className="w-full p-7 sm:p-8">
+          <h1 className="text-2xl font-semibold tracking-[-0.03em]">Welcome to CyntraAI</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Set a password so you can also sign in with email, in addition to
             Google.
@@ -107,19 +98,19 @@ export function AccountSetupForm({
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">Email</label>
+              <label className="text-xs font-medium text-muted-foreground">Email</label>
               <input
                 type="email"
                 value={email}
                 disabled
                 readOnly
                 aria-readonly
-                className="mt-1 w-full cursor-not-allowed rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+                className="field mt-1 w-full"
               />
             </div>
 
             <div>
-              <label className="text-xs text-muted-foreground">
+              <label className="text-xs font-medium text-muted-foreground">
                 New password
               </label>
               <input
@@ -127,12 +118,12 @@ export function AccountSetupForm({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field mt-1 w-full"
               />
             </div>
 
             <div>
-              <label className="text-xs text-muted-foreground">
+              <label className="text-xs font-medium text-muted-foreground">
                 Confirm password
               </label>
               <input
@@ -140,18 +131,17 @@ export function AccountSetupForm({
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field mt-1 w-full"
               />
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <Alert role="alert">{error}</Alert>}
 
-            <Button type="submit" disabled={loading} className="mt-2">
+            <Button type="submit" loading={loading} className="mt-2">
               {loading ? "Setting up…" : "Continue"}
             </Button>
           </form>
         </Card>
-      </motion.div>
-    </div>
+      </AuthShell>
   );
 }

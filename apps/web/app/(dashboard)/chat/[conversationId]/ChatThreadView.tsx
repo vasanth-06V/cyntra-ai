@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import { ChatWindow } from "@/components/chat/ChatWindow";
+import { Alert } from "@/components/ui/Alert";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { ChatMessage } from "@/types/chat";
 import type { ProviderKey, ProviderName } from "@/types/keys";
 
@@ -30,15 +32,22 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
   }, [conversationId]);
 
   if (error) {
-    return <p className="p-6 text-sm text-destructive">{error}</p>;
+    return <Alert role="alert">{error}</Alert>;
   }
 
   if (messages === null) {
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div role="status" className="fill-screen flex flex-col gap-4 rounded-xl border border-border bg-card p-5 shadow-sm">
+        <span className="sr-only">Loading…</span>
+        <Skeleton className="h-12 w-2/3" />
+        <Skeleton className="ml-auto h-12 w-1/2" />
+        <Skeleton className="h-20 w-3/4" />
+      </div>
+    );
   }
 
   return (
-    <div className="h-[calc(100vh-8.5rem)]">
+    <div className="fill-screen overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <ChatWindow
         conversationId={conversationId}
         initialMessages={messages}

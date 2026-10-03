@@ -2,8 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ListSkeleton } from "@/components/ui/Skeleton";
+import { BookIcon } from "@/components/ui/icons";
 import {
   INTERVIEW_TYPE_LABELS,
   type InterviewType,
@@ -142,22 +148,22 @@ export function QuestionBankView() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold">Question Bank</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage interview questions and test cases. Saving requires a valid Gemini
-        key (each question is embedded for RAG selection).
-      </p>
+      <PageHeader
+        title="Question Bank"
+        description="Manage interview questions and test cases. Saving requires a valid Gemini key (each question is embedded for RAG selection)."
+      />
 
-      <Card className="mt-6 p-5">
-        <h2 className="text-sm font-medium">
+      <Card className="mt-6 max-w-3xl p-5 sm:p-6">
+        <h2 className="text-sm font-semibold">
           {editingId ? "Edit question" : "Add a question"}
         </h2>
         <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
           <select
             value={type}
+            aria-label="Question type"
             onChange={(e) => setType(e.target.value as InterviewType)}
             disabled={!!editingId}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            className="field"
           >
             {INTERVIEW_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -172,14 +178,14 @@ export function QuestionBankView() {
             placeholder="Question text…"
             rows={3}
             required
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="field"
           />
 
           <input
             value={tagsText}
             onChange={(e) => setTagsText(e.target.value)}
             placeholder="Tags, comma separated (optional)"
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="field"
           />
 
           <div className="flex gap-3">
@@ -189,13 +195,13 @@ export function QuestionBankView() {
               placeholder="Topic, e.g. arrays, caching, conflict (optional)"
               aria-label="Topic"
               maxLength={60}
-              className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="field min-w-0 flex-1"
             />
             <select
               value={difficulty}
               onChange={(e) => setDifficulty(e.target.value)}
               aria-label="Difficulty"
-              className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="field"
             >
               <option value="">Difficulty</option>
               {[1, 2, 3, 4, 5].map((d) => (
@@ -220,7 +226,7 @@ export function QuestionBankView() {
                 rows={8}
                 maxLength={8000}
                 spellCheck={false}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
+                className="field font-mono text-xs"
               />
               <input
                 value={solutionLanguage}
@@ -228,15 +234,15 @@ export function QuestionBankView() {
                 placeholder="Language of the solution, e.g. Python"
                 aria-label="Solution language"
                 maxLength={30}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field"
               />
             </div>
           )}
 
-          {formError && <p className="text-sm text-destructive">{formError}</p>}
+          {formError && <Alert role="alert">{formError}</Alert>}
 
           <div className="flex gap-2">
-            <Button type="submit" disabled={saving || !questionText.trim()}>
+            <Button type="submit" loading={saving} disabled={!questionText.trim()}>
               {saving ? "Saving…" : editingId ? "Save changes" : "Add question"}
             </Button>
             {editingId && (
@@ -248,14 +254,15 @@ export function QuestionBankView() {
         </form>
       </Card>
 
-      <div className="mt-6 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">
+      <div className="mt-8 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-muted-foreground">
           {visibleQuestions.length} question{visibleQuestions.length === 1 ? "" : "s"}
         </h2>
         <select
           value={filterType}
+          aria-label="Filter by type"
           onChange={(e) => setFilterType(e.target.value as InterviewType | "all")}
-          className="rounded-lg border border-border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="field field-sm"
         >
           <option value="all">All types</option>
           {INTERVIEW_TYPES.map((t) => (
@@ -267,23 +274,23 @@ export function QuestionBankView() {
       </div>
 
       {loading ? (
-        <p className="mt-4 text-sm text-muted-foreground">Loading…</p>
+        <ListSkeleton className="mt-4" rows={3} />
       ) : loadError ? (
-        <p className="mt-4 text-sm text-destructive">{loadError}</p>
+        <Alert role="alert" className="mt-4">
+          {loadError}
+        </Alert>
       ) : visibleQuestions.length === 0 ? (
-        <div className="mt-4 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+        <EmptyState className="mt-4" icon={<BookIcon size={20} />} title="No questions yet">
           No questions yet.
-        </div>
+        </EmptyState>
       ) : (
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="stagger mt-4 flex flex-col gap-2">
           {visibleQuestions.map((q) => (
             <Card key={q.id} className="p-4">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="text-xs text-muted-foreground">
-                    {INTERVIEW_TYPE_LABELS[q.type]}
-                  </span>
-                  <p className="text-sm">{q.question}</p>
+                <div className="min-w-0">
+                  <Badge tone="brand">{INTERVIEW_TYPE_LABELS[q.type]}</Badge>
+                  <p className="mt-1.5 text-sm leading-6">{q.question}</p>
                   {(q.topic || q.difficulty) && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       {[q.topic, q.difficulty ? `difficulty ${q.difficulty}/5` : null]
@@ -297,21 +304,19 @@ export function QuestionBankView() {
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(q)}
-                    className="text-sm text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
+                <div className="flex shrink-0 gap-1">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(q)}>
                     Edit
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleDelete(q.id)}
-                    className="text-sm text-muted-foreground hover:text-destructive cursor-pointer"
+                    className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             </Card>

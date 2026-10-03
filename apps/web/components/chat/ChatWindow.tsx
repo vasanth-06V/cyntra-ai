@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ChatIcon, SendIcon } from "@/components/ui/icons";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage } from "@/types/chat";
 import { PROVIDER_INFO, type ProviderName } from "@/types/keys";
@@ -82,20 +85,25 @@ export function ChatWindow({
 
   return (
     <div className="flex h-full flex-col">
-      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
+      <div role="log" aria-live="polite" className="flex-1 space-y-4 overflow-y-auto scroll-smooth p-4 sm:p-6">
+        {messages.length === 0 && (
+          <EmptyState className="mx-auto mt-6 max-w-md border-0 bg-transparent" icon={<ChatIcon size={20} />} title="Start the conversation">
+            Ask anything, or paste an answer you want feedback on.
+          </EmptyState>
+        )}
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border p-3">
+      <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border bg-background/50 p-3">
         <select
           value={provider ?? ""}
           aria-label="Model provider"
           onChange={(e) => setProvider(e.target.value as ProviderName)}
           disabled={validProviders.length === 0}
-          className="rounded-lg border border-border bg-transparent px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="field max-w-[8.5rem] sm:max-w-none"
         >
           {validProviders.length === 0 ? (
             <option value="">No valid keys</option>
@@ -113,17 +121,18 @@ export function ChatWindow({
           placeholder="Message…"
           aria-label="Message"
           disabled={!provider || sending}
-          className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          className="field min-w-0 flex-1"
         />
-        <Button type="submit" disabled={!provider || sending || !input.trim()}>
+        <Button type="submit" loading={sending} disabled={!provider || !input.trim()}>
+          <SendIcon size={16} />
           Send
         </Button>
       </form>
 
       {error && (
-        <p role="alert" className="px-4 pb-3 text-sm text-destructive">
+        <Alert role="alert" className="m-3 mt-0">
           {error}
-        </p>
+        </Alert>
       )}
     </div>
   );

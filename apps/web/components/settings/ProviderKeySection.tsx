@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { ProviderKeyForm } from "./ProviderKeyForm";
 import { PROVIDER_INFO, type ProviderKey, type ProviderName } from "@/types/keys";
@@ -37,21 +38,38 @@ export function ProviderKeySection({
 
   return (
     <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <h3 className="font-medium">
-          {info.label}
-          {required && <span className="ml-2 text-xs text-destructive">Required</span>}
-        </h3>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-sm font-semibold text-accent-foreground"
+          >
+            {info.label.charAt(0)}
+          </span>
+          <h3 className="flex flex-wrap items-center gap-2 font-semibold tracking-tight">
+            {info.label}
+            {required && <Badge tone="warning">Required</Badge>}
+            {primary ? (
+              primary.is_valid ? (
+                <Badge tone="success">Connected</Badge>
+              ) : (
+                <Badge tone="danger">Needs attention</Badge>
+              )
+            ) : (
+              <Badge>Not connected</Badge>
+            )}
+          </h3>
+        </div>
         <a
           href={info.getKeyUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-primary underline-offset-4 hover:underline"
+          className="text-xs font-medium text-primary underline-offset-4 hover:underline"
         >
           Get your {info.label} key
         </a>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">{info.instructions}</p>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{info.instructions}</p>
 
       <div className="mt-4">
         <ProviderKeyForm
@@ -65,7 +83,7 @@ export function ProviderKeySection({
 
       {showBackup || backup ? (
         <div className="mt-4 border-t border-border pt-4">
-          <p className="mb-2 text-xs text-muted-foreground">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
             Backup key (used automatically if the primary hits a rate limit)
           </p>
           <ProviderKeyForm
@@ -80,7 +98,7 @@ export function ProviderKeySection({
         <button
           type="button"
           onClick={() => setShowBackup(true)}
-          className="mt-3 text-sm text-muted-foreground underline-offset-4 hover:underline cursor-pointer"
+          className="mt-3 cursor-pointer text-sm font-medium text-primary underline-offset-4 hover:underline"
         >
           + Add a backup key
         </button>

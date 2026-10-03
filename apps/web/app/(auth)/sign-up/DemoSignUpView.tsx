@@ -12,11 +12,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
+import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Alert } from "@/components/ui/Alert";
+import { AuthShell } from "@/components/ui/AuthShell";
 
 const PASSWORD_MIN_LENGTH = 8;
 
@@ -96,21 +97,12 @@ export function DemoSignUpView() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-6">
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-      >
-        <Card className="w-full max-w-sm p-8">
-          <div className="mb-2 inline-block rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+    <AuthShell>
+        <Card tone="raised" className="w-full p-7 sm:p-8">
+          <Badge tone="brand" className="mb-3">
             Demo only
-          </div>
-          <h1 className="text-xl font-semibold">Create a demo account</h1>
+          </Badge>
+          <h1 className="text-2xl font-semibold tracking-[-0.03em]">Create a demo account</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Temporary, for testing before Google sign-in is configured.
           </p>
@@ -131,7 +123,7 @@ export function DemoSignUpView() {
                 placeholder="Full name (optional)"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field"
               />
               <input
                 type="email"
@@ -139,7 +131,7 @@ export function DemoSignUpView() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field"
               />
               <input
                 type="password"
@@ -147,7 +139,7 @@ export function DemoSignUpView() {
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field"
               />
               <input
                 type="password"
@@ -155,22 +147,21 @@ export function DemoSignUpView() {
                 placeholder="Confirm password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="field"
               />
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" disabled={loading}>
+              {error && <Alert role="alert">{error}</Alert>}
+              <Button type="submit" loading={loading}>
                 {loading ? "Creating account…" : "Create account"}
               </Button>
               <a
                 href="/sign-in"
-                className="text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+                className="text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
               >
                 Back to sign in
               </a>
             </form>
           )}
         </Card>
-      </motion.div>
-    </div>
+      </AuthShell>
   );
 }

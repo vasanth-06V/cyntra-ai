@@ -2,16 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Alert } from "@/components/ui/Alert";
+import { Badge, type Tone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ListSkeleton } from "@/components/ui/Skeleton";
+import { FileIcon, UploadIcon } from "@/components/ui/icons";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
 import type { Resume } from "@/types/resumes";
 
-function statusLabel(resume: Resume): { text: string; className: string } {
+function statusLabel(resume: Resume): { text: string; tone: Tone } {
   if (resume.parsed_text) {
-    return { text: "Processed", className: "text-green-600 dark:text-green-400" };
+    return { text: "Processed", tone: "success" };
   }
-  return { text: "Processing failed or pending", className: "text-destructive" };
+  return { text: "Processing failed or pending", tone: "danger" };
 }
 
 export function ResumesView() {
@@ -112,41 +118,39 @@ export function ResumesView() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Resumes</h1>
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx"
-            onChange={handleFileChange}
-            className="hidden"
-            id="resume-upload"
-          />
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            {uploading ? "Uploading…" : "Upload resume"}
-          </Button>
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        PDF or DOCX, up to 500KB. Used for interviews and ATS score checks.
-      </p>
+      <PageHeader
+        title="Resumes"
+        description="PDF or DOCX, up to 500KB. Used for interviews and ATS score checks."
+        actions={
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              onChange={handleFileChange}
+              className="hidden"
+              id="resume-upload"
+            />
+            <Button onClick={() => fileInputRef.current?.click()} loading={uploading}>
+              {!uploading && <UploadIcon size={16} />}
+              {uploading ? "Uploading…" : "Upload resume"}
+            </Button>
+          </>
+        }
+      />
 
       {error && (
-        <p role="alert" className="mt-4 text-sm text-destructive">
+        <Alert role="alert" className="mt-4">
           {error}
-        </p>
+        </Alert>
       )}
 
       {loading ? (
-        <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
+        <ListSkeleton className="mt-6" rows={3} />
       ) : resumes.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+        <EmptyState className="mt-6" icon={<FileIcon size={20} />} title="No resumes yet">
           No resumes yet -- upload one above.
-        </div>
+        </EmptyState>
       ) : (
         <div className="mt-6 flex flex-col gap-2">
           <AnimatePresence initial={false}>
@@ -155,35 +159,45 @@ export function ResumesView() {
               return (
                 <motion.div
                   key={resume.id}
+                  layout="position"
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <Card className="flex items-center justify-between p-4">
-                    <div>
-                      <p className="text-sm font-medium">
-                        {resume.file_key.split("/").pop()}
-                      </p>
-                      <p className={`text-xs ${status.className}`}>{status.text}</p>
+                  <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                        <FileIcon size={18} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{resume.file_key.split("/").pop()}</p>
+                        <Badge tone={status.tone} className="mt-1">
+                          {status.text}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                    {!resume.parsed_text && (
-                      <button
+                    <div className="flex items-center gap-2">
+                      {!resume.parsed_text && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleRetry(resume.id)}
+                          loading={retryingId === resume.id}
+                        >
+                          {retryingId === resume.id ? "Processing…" : "Retry processing"}
+                        </Button>
+                      )}
+                      <Button
                         type="button"
-                        onClick={() => handleRetry(resume.id)}
-                        disabled={retryingId === resume.id}
-                        className="text-sm text-primary hover:underline cursor-pointer disabled:opacity-50"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(resume.id)}
+                        className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
                       >
-                        {retryingId === resume.id ? "Processing…" : "Retry processing"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(resume.id)}
-                      className="text-sm text-muted-foreground hover:text-destructive cursor-pointer"
-                    >
-                      Delete
-                    </button>
+                        Delete
+                      </Button>
                     </div>
                   </Card>
                 </motion.div>

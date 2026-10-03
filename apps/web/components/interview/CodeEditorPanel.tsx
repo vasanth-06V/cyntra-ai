@@ -3,14 +3,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { useTheme } from "next-themes";
+import { Alert } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { CodeIcon } from "@/components/ui/icons";
 import type { Job } from "@/types/jobs";
 import type { ProblemState, SubmissionStarted } from "@/types/coding";
 
 // Monaco is large: load it only when a coding problem is actually active.
 const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
-  loading: () => <p className="p-3 text-sm text-muted-foreground">Loading editor…</p>,
+  loading: () => (
+    <div role="status" className="flex h-full min-h-[260px] flex-col gap-2 p-4">
+      <span className="sr-only">Loading editor…</span>
+      <Skeleton className="h-4 w-1/3" />
+      <Skeleton className="h-4 w-2/3" />
+      <Skeleton className="h-4 w-1/2" />
+      <Skeleton className="h-4 w-3/5" />
+    </div>
+  ),
 });
 
 // Any language is accepted; these get syntax highlighting and a menu entry.
@@ -78,6 +91,7 @@ export function CodeEditorPanel({
   onReviewed,
   onProblemChange,
 }: Props) {
+  const { resolvedTheme } = useTheme();
   const [problem, setProblem] = useState<ProblemState | null>(null);
   const [code, setCode] = useState("");
   const [languageChoice, setLanguageChoice] = useState("Python");
@@ -223,10 +237,13 @@ export function CodeEditorPanel({
   return (
     <section
       aria-label="Code editor"
-      className="flex min-h-0 flex-col border-border lg:border-l"
+      className="flex min-h-0 animate-slide-in flex-col border-t border-border bg-card max-lg:min-h-[30rem] lg:border-l lg:border-t-0"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <p className="text-sm font-medium">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-background/60 px-3 py-2">
+        <p className="flex items-center gap-2 text-sm font-semibold">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+            <CodeIcon size={15} />
+          </span>
           Problem {problem.problem_number} of {problem.total_problems}
         </p>
         <div className="flex items-center gap-2">
@@ -238,7 +255,7 @@ export function CodeEditorPanel({
             value={submission ? (LANGUAGES.some((l) => l.label === submission.language) ? submission.language : OTHER) : languageChoice}
             onChange={(e) => setLanguageChoice(e.target.value)}
             disabled={locked}
-            className="rounded-lg border border-border bg-transparent px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="field field-sm"
           >
             {LANGUAGES.map((l) => (
               <option key={l.label} value={l.label}>
@@ -255,14 +272,14 @@ export function CodeEditorPanel({
               aria-label="Language name"
               maxLength={30}
               disabled={locked}
-              className="w-32 rounded-lg border border-border bg-transparent px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="field field-sm w-32"
             />
           )}
         </div>
       </div>
 
       {problem.question && (
-        <div className="max-h-32 overflow-y-auto border-b border-border bg-secondary/40 px-3 py-2 text-sm">
+        <div className="max-h-36 overflow-y-auto border-b border-border bg-accent/40 px-4 py-3 text-sm leading-6">
           {problem.question}
         </div>
       )}
@@ -273,7 +290,7 @@ export function CodeEditorPanel({
           language={monacoLanguage}
           value={code}
           onChange={onCodeChange}
-          theme="vs-dark"
+          theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
           options={{
             readOnly: locked,
             minimap: { enabled: false },
@@ -286,9 +303,12 @@ export function CodeEditorPanel({
         />
       </div>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border bg-background/60 p-3">
         {submission ? (
-          <p className="text-sm text-muted-foreground" role="status">
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            <Badge tone={submission.status === "review" || reviewing ? "info" : "success"}>
+              {submission.status === "review" || reviewing ? "Reviewing" : "Submitted"}
+            </Badge>
             {submission.status === "review" || reviewing
               ? (progress ?? "Reviewing your solution…")
               : `Submitted · ${submission.language} · ${submission.line_count} lines. Keep talking it through with the interviewer.`}
@@ -316,14 +336,14 @@ export function CodeEditorPanel({
           </div>
         )}
         {code.length > MAX_CODE && (
-          <p role="alert" className="mt-2 text-sm text-destructive">
+          <Alert role="alert" className="mt-2">
             Too long to review ({code.length}/{MAX_CODE} characters).
-          </p>
+          </Alert>
         )}
         {error && (
-          <p role="alert" className="mt-2 text-sm text-destructive">
+          <Alert role="alert" className="mt-2">
             {error}
-          </p>
+          </Alert>
         )}
       </div>
     </section>

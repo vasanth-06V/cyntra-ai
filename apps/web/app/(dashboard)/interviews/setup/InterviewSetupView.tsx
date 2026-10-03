@@ -3,7 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { FormSkeleton } from "@/components/ui/Skeleton";
+import { FileIcon, KeyIcon } from "@/components/ui/icons";
 import { LoadingScene } from "@/components/three/LoadingScene";
 import {
   INTERVIEW_TYPE_LABELS,
@@ -116,89 +122,121 @@ export function InterviewSetupView() {
 
   if (starting) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <LoadingScene className="h-64 w-64" />
-        <h1 className="text-xl font-semibold">Setting up your interview…</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
+      <div className="brand-wash mx-auto flex max-w-xl flex-col items-center justify-center gap-4 rounded-2xl border border-border bg-card px-6 py-12 text-center shadow-md">
+        <LoadingScene className="h-56 w-56" />
+        <h1 className="text-xl font-semibold tracking-[-0.025em]">Setting up your interview…</h1>
+        <p role="status" className="max-w-sm text-sm leading-6 text-muted-foreground">
           {progress ?? "Analyzing your resume and matching questions to the job description."}
         </p>
+        <p className="text-xs text-muted-foreground">This usually takes under a minute. You can keep this tab open.</p>
       </div>
     );
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold">Start an interview</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        A fixed 1-hour mock interview, personalized to your resume and the job description.
-      </p>
+      <PageHeader
+        title="Start an interview"
+        description="A fixed 1-hour mock interview, personalized to your resume and the job description."
+      />
 
       {loading ? (
-        <p className="mt-6 text-sm text-muted-foreground">Loading…</p>
+        <FormSkeleton className="mt-6 max-w-xl" />
       ) : resumes.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          Upload and process a resume first, from the Resumes page.
-        </div>
+        <>
+          {error && (
+            <Alert role="alert" className="mt-6">
+              {error}
+            </Alert>
+          )}
+          <EmptyState className="mt-6" icon={<FileIcon size={20} />} title="No processed resume yet">
+            Upload and process a resume first, from the Resumes page.
+          </EmptyState>
+        </>
       ) : validProviders.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+        <EmptyState className="mt-6" icon={<KeyIcon size={20} />} title="No usable key yet">
           Add a valid Gemini or Groq key first, from Settings → API Keys.
-        </div>
+        </EmptyState>
       ) : (
-        <form onSubmit={handleSubmit} className="mt-6 flex max-w-lg flex-col gap-3">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as InterviewType)}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {INTERVIEW_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {INTERVIEW_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
+        <Card className="mt-6 max-w-xl p-5 sm:p-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="iv-type" className="text-xs font-medium text-muted-foreground">
+                Interview type
+              </label>
+              <select
+                id="iv-type"
+                value={type}
+                onChange={(e) => setType(e.target.value as InterviewType)}
+                className="field"
+              >
+                {INTERVIEW_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {INTERVIEW_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <select
-            value={resumeId}
-            onChange={(e) => setResumeId(e.target.value)}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {resumes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.file_key.split("/").pop()}
-              </option>
-            ))}
-          </select>
+            <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <label htmlFor="iv-resume" className="text-xs font-medium text-muted-foreground">
+                  Resume
+                </label>
+                <select
+                  id="iv-resume"
+                  value={resumeId}
+                  onChange={(e) => setResumeId(e.target.value)}
+                  className="field"
+                >
+                  {resumes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.file_key.split("/").pop()}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value as InterviewProviderName)}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {validProviders.map((p) => (
-              <option key={p} value={p}>
-                {p === "gemini" ? "Gemini" : "Groq"}
-              </option>
-            ))}
-          </select>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="iv-provider" className="text-xs font-medium text-muted-foreground">
+                  Model
+                </label>
+                <select
+                  id="iv-provider"
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value as InterviewProviderName)}
+                  className="field"
+                >
+                  {validProviders.map((p) => (
+                    <option key={p} value={p}>
+                      {p === "gemini" ? "Gemini" : "Groq"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          <textarea
-            value={jdText}
-            onChange={(e) => setJdText(e.target.value)}
-            placeholder="Paste the job description here…"
-            rows={8}
-            className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="iv-jd" className="text-xs font-medium text-muted-foreground">
+                Job description
+              </label>
+              <textarea
+                id="iv-jd"
+                value={jdText}
+                onChange={(e) => setJdText(e.target.value)}
+                placeholder="Paste the job description here…"
+                rows={8}
+                className="field resize-y leading-6"
+              />
+            </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <Alert role="alert">{error}</Alert>}
 
-          <Button
-            type="submit"
-            disabled={!provider || !jdText.trim()}
-            className="self-start"
-          >
-            Start interview
-          </Button>
-        </form>
+            <Button type="submit" size="lg" disabled={!provider || !jdText.trim()} className="self-start">
+              Start interview
+            </Button>
+          </form>
+        </Card>
       )}
     </div>
   );

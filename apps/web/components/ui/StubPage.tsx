@@ -1,3 +1,7 @@
+import { EmptyState } from "./EmptyState";
+import { PageHeader } from "./PageHeader";
+import { ClockIcon } from "./icons";
+
 export function StubPage({
   title,
   description,
@@ -7,11 +11,10 @@ export function StubPage({
 }) {
   return (
     <div>
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      <div className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+      <PageHeader title={title} description={description} />
+      <EmptyState className="mt-6" icon={<ClockIcon size={20} />}>
         Coming in a later build phase.
-      </div>
+      </EmptyState>
     </div>
   );
 }

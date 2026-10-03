@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { BellIcon } from "./icons";
 
 type Notice = { id: string; message: string; is_read: boolean; created_at: string };
 
@@ -65,13 +66,13 @@ export function NotificationsBell() {
         onClick={() => setOpen((o) => !o)}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
         aria-expanded={open}
-        className="relative cursor-pointer rounded-lg px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+        className="relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-xs transition-colors duration-150 hover:border-border-strong hover:bg-secondary hover:text-foreground"
       >
-        <span aria-hidden="true">🔔</span>
+        <BellIcon size={18} />
         {unread > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-destructive px-1 text-center text-[10px] leading-4 text-destructive-foreground"
+            className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-destructive px-1 text-center text-[10px] font-semibold leading-[18px] text-destructive-foreground ring-2 ring-background"
           >
             {unread}
           </span>
@@ -82,15 +83,15 @@ export function NotificationsBell() {
         <div
           role="region"
           aria-label="Notifications"
-          className="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-border bg-card p-3 text-card-foreground shadow-lg"
+          className="absolute right-0 z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right animate-pop-in rounded-xl border border-border bg-card p-3 text-card-foreground shadow-lg"
         >
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">Notifications</h2>
+            <h2 className="text-sm font-semibold">Notifications</h2>
             {unread > 0 && (
               <button
                 type="button"
                 onClick={() => void markAllRead()}
-                className="cursor-pointer text-xs text-primary underline-offset-4 hover:underline"
+                className="cursor-pointer text-xs font-medium text-primary underline-offset-4 hover:underline"
               >
                 Mark all read
               </button>
@@ -103,10 +104,10 @@ export function NotificationsBell() {
               {notices.map((n) => (
                 <li
                   key={n.id}
-                  className={`rounded-lg px-2 py-1.5 text-sm ${n.is_read ? "text-muted-foreground" : "bg-secondary"}`}
+                  className={`rounded-lg px-2.5 py-2 text-sm leading-5 ${n.is_read ? "text-muted-foreground" : "bg-accent text-accent-foreground"}`}
                 >
                   {n.message}
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                  <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
                     {new Date(n.created_at).toLocaleString()}
                   </span>
                 </li>

@@ -4,8 +4,8 @@ import { Canvas } from "@react-three/fiber";
 import { useTheme } from "next-themes";
 import { RotatingIcosahedron } from "./scenes/RotatingIcosahedron";
 
-const PRIMARY_LIGHT = "#4f46e5";
-const PRIMARY_DARK = "#818cf8";
+const PRIMARY_LIGHT = "#4338ca";
+const PRIMARY_DARK = "#8a93ff";
 
 export default function LoadingSceneInner() {
   const { resolvedTheme } = useTheme();

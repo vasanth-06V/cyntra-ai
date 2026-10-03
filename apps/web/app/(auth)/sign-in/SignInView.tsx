@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { Alert } from "@/components/ui/Alert";
+import { AuthShell } from "@/components/ui/AuthShell";
+import { GoogleIcon } from "@/components/ui/icons";
 
 export function SignInView({ initialError = null }: { initialError?: string | null }) {
   const [loading, setLoading] = useState(false);
@@ -28,64 +29,60 @@ export function SignInView({ initialError = null }: { initialError?: string | nu
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-6">
-      <div className="absolute right-6 top-6">
-        <ThemeToggle />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
-      >
-        <Card className="w-full max-w-sm p-8">
-          <h1 className="text-xl font-semibold">CyntraAI</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sign in to continue.
-          </p>
-
-          {!emailMode ? (
-            <>
-              <Button
-                onClick={signInWithGoogle}
-                disabled={loading}
-                className="mt-6 w-full"
-              >
-                {loading ? "Redirecting…" : "Continue with Google"}
-              </Button>
-
-              {error && (
-                <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setEmailMode(true)}
-                className="mt-4 w-full text-center text-sm text-muted-foreground underline-offset-4 hover:underline cursor-pointer"
-              >
-                Sign in with email &amp; password instead
-              </button>
-
-              {/* TEMPORARY DEV/DEMO LINK -- remove alongside app/(auth)/sign-up
-                  once Google sign-in is configured and verified end-to-end. */}
-              <a
-                href="/sign-up"
-                className="mt-2 block text-center text-xs text-muted-foreground underline-offset-4 hover:underline"
-              >
-                Create a demo account (dev only)
-              </a>
-            </>
-          ) : (
-            <EmailPasswordSignIn onBack={() => setEmailMode(false)} />
-          )}
-        </Card>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          <a href="/privacy" className="underline-offset-4 hover:underline">
-            Privacy
-          </a>
+    <AuthShell showcase>
+      <Card tone="raised" className="w-full p-7 sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-[-0.03em]">Welcome back</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          Sign in to continue to CyntraAI.
         </p>
-      </motion.div>
-    </div>
+
+        {!emailMode ? (
+          <>
+            <Button
+              onClick={signInWithGoogle}
+              loading={loading}
+              size="lg"
+              variant="outline"
+              className="mt-7 w-full"
+            >
+              {!loading && <GoogleIcon size={18} />}
+              {loading ? "Redirecting…" : "Continue with Google"}
+            </Button>
+
+            {error && (
+              <Alert role="alert" className="mt-4">
+                {error}
+              </Alert>
+            )}
+
+            <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+              <span className="h-px flex-1 bg-border" />
+              or
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setEmailMode(true)}
+              className="w-full cursor-pointer text-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Sign in with email &amp; password instead
+            </button>
+
+            {/* TEMPORARY DEV/DEMO LINK -- remove alongside app/(auth)/sign-up
+                once Google sign-in is configured and verified end-to-end. */}
+            <a
+              href="/sign-up"
+              className="mt-3 block text-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Create a demo account (dev only)
+            </a>
+          </>
+        ) : (
+          <EmailPasswordSignIn onBack={() => setEmailMode(false)} />
+        )}
+      </Card>
+    </AuthShell>
   );
 }
 
@@ -119,27 +116,31 @@ function EmailPasswordSignIn({ onBack }: { onBack: () => void }) {
       <input
         type="email"
         required
+        aria-label="Email"
+        autoComplete="email"
         placeholder="you@gmail.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        className="field"
       />
       <input
         type="password"
         required
+        aria-label="Password"
+        autoComplete="current-password"
         placeholder="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        className="field"
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={loading}>
+      {error && <Alert role="alert">{error}</Alert>}
+      <Button type="submit" loading={loading}>
         {loading ? "Signing in…" : "Sign in"}
       </Button>
       <button
         type="button"
         onClick={onBack}
-        className="text-center text-sm text-muted-foreground underline-offset-4 hover:underline cursor-pointer"
+        className="text-center text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline cursor-pointer"
       >
         Back to Google sign-in
       </button>

@@ -3,6 +3,7 @@
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { flushSync } from "react-dom";
 
 const noopSubscribe = () => () => {};
 
@@ -50,17 +51,40 @@ export function ThemeToggle() {
   const mounted = useMounted();
 
   if (!mounted) {
-    return <div className="h-9 w-9 rounded-full" />;
+    return <div className="h-9 w-9 rounded-full border border-transparent" />;
   }
 
   const isDark = resolvedTheme === "dark";
+
+  // Cross-fade the whole page where the View Transitions API exists; elsewhere
+  // (and for people who prefer reduced motion) the theme simply switches.
+  function toggle() {
+    const next = isDark ? "light" : "dark";
+    const start = (document as Document & { startViewTransition?: (cb: () => void) => unknown })
+      .startViewTransition;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!start || reduce) {
+      setTheme(next);
+      return;
+    }
+    let applied = false;
+    const apply = () => {
+      if (applied) return;
+      applied = true;
+      flushSync(() => setTheme(next));
+    };
+    start.call(document, apply);
+    // Safety net: if the browser never gets to render (e.g. a throttled
+    // frame), the theme must still change.
+    setTimeout(apply, 300);
+  }
 
   return (
     <button
       type="button"
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary text-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
+      onClick={toggle}
+      className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-border bg-card text-foreground shadow-xs transition-colors duration-150 hover:border-border-strong hover:bg-accent hover:text-accent-foreground cursor-pointer"
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.span

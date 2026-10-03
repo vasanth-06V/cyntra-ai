@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient, ApiError } from "@/lib/api-client/fastapi";
+import { Alert } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
 import { PhaseTimer } from "@/components/interview/PhaseTimer";
@@ -197,93 +200,155 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     sendRef.current = (text) => void sendContent(text);
   });
 
-  if (loadError) return <p role="alert" className="p-6 text-sm text-destructive">{loadError}</p>;
-  if (!interview) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
+  if (loadError) return <Alert role="alert">{loadError}</Alert>;
+  if (!interview) {
+    return (
+      <div role="status" className="fill-screen flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-md">
+        <span className="sr-only">Loading…</span>
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-16 w-2/3" />
+        <Skeleton className="ml-auto h-12 w-1/2" />
+        <Skeleton className="mt-auto h-12 w-full" />
+      </div>
+    );
+  }
+
+  // Who has the floor right now. Purely visual: the voice bar and live log
+  // already announce the same changes to assistive tech.
+  const turn: { label: string; tone: "info" | "brand" | "success" | "neutral" } = !isActive
+    ? { label: `Interview ${interview.status.replace(/_/g, " ")}`, tone: "neutral" }
+    : reviewing
+      ? { label: "Reviewing your code", tone: "info" }
+      : sending
+        ? { label: "Interviewer is thinking", tone: "info" }
+        : voice.speaking
+          ? { label: "Interviewer is speaking", tone: "brand" }
+          : voice.listening
+            ? { label: "Listening to you", tone: "success" }
+            : { label: "Your turn", tone: "success" };
 
   return (
-    <div className="flex h-[calc(100vh-8.5rem)] flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <div
+      className={`fill-screen flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-md ${
+        codeActive ? "max-lg:!h-auto" : ""
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-background/60 px-4 py-3">
         <PhaseTimer phase={phase || interview.status} minutesRemaining={minutesRemaining} />
-        {isActive && (
-          <button
-            type="button"
-            onClick={handleComplete}
-            className="text-sm text-muted-foreground hover:text-destructive cursor-pointer"
+        <div className="flex items-center gap-2">
+          <Badge tone={turn.tone} className="gap-1.5" aria-hidden="true">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                turn.tone === "success"
+                  ? "bg-success"
+                  : turn.tone === "info"
+                    ? "bg-info"
+                    : turn.tone === "brand"
+                      ? "bg-primary"
+                      : "bg-muted-foreground"
+              }`}
+            />
+            {turn.label}
+          </Badge>
+          {isActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleComplete}
+              className="text-muted-foreground hover:bg-destructive-soft hover:text-destructive"
+            >
+              End interview
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div
+        className={`flex min-h-0 flex-1 flex-col ${
+          codeActive ? "lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]" : ""
+        }`}
+      >
+        <div className={`flex min-h-0 min-w-0 flex-1 flex-col ${codeActive ? "max-lg:h-[30rem] max-lg:flex-none" : ""}`}>
+          <div
+            role="log"
+            aria-live="polite"
+            className="flex-1 space-y-4 overflow-y-auto scroll-smooth bg-secondary/40 p-4 sm:p-6"
           >
-            End interview
-          </button>
+            {messages.map((m) => (
+              <MessageBubble key={m.id} message={m} assistantLabel="Interviewer" />
+            ))}
+            {sending && (
+              <div aria-hidden="true" className="animate-fade-in">
+                <MessageBubble
+                  message={{ id: "typing", role: "assistant", provider: null, content: "", created_at: "" }}
+                  assistantLabel="Interviewer"
+                />
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {isActive && (
+            <VoiceBar
+              voice={voice}
+              settings={voiceSettings}
+              onSettingsChange={changeVoiceSettings}
+              onEnable={enableVoice}
+              onDisable={() => changeVoiceSettings({ ...voiceSettings, enabled: false })}
+              onSendCaption={voice.sendNow}
+              reviewing={reviewing}
+              sending={sending}
+            />
+          )}
+
+          {isActive ? (
+            <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border bg-card p-3">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Your answer…"
+                aria-label="Your answer"
+                maxLength={4000}
+                disabled={sending || reviewing}
+                className="field min-w-0 flex-1"
+              />
+              <Button type="submit" loading={sending} disabled={reviewing || !input.trim()}>
+                {sending ? "Thinking…" : "Send"}
+              </Button>
+            </form>
+          ) : (
+            <div className="border-t border-border bg-card p-5 text-center">
+              <p className="mb-3 text-sm text-muted-foreground">
+                This interview is {interview.status}.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {interview.status === "completed" && (
+                  <Button onClick={() => router.push("/reports")}>Get my report</Button>
+                )}
+                <Button variant="outline" onClick={() => router.push("/interviews")}>
+                  Back to interviews
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isActive && (
+          <CodeEditorPanel
+            interviewId={interviewId}
+            refreshKey={`${phase}:${messages.length}`}
+            onBusyChange={setReviewing}
+            onReviewed={reloadTranscript}
+            onProblemChange={setCodeActive}
+          />
         )}
       </div>
 
-      <div className={`flex min-h-0 flex-1 flex-col ${codeActive ? "lg:grid lg:grid-cols-2" : ""}`}>
-      <div className="flex min-h-0 flex-1 flex-col">
-      <div role="log" aria-live="polite" className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {isActive && (
-        <VoiceBar
-          voice={voice}
-          settings={voiceSettings}
-          onSettingsChange={changeVoiceSettings}
-          onEnable={enableVoice}
-          onDisable={() => changeVoiceSettings({ ...voiceSettings, enabled: false })}
-          onSendCaption={voice.sendNow}
-          reviewing={reviewing}
-          sending={sending}
-        />
-      )}
-
-      {isActive ? (
-        <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-border p-3">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Your answer…"
-            aria-label="Your answer"
-            maxLength={4000}
-            disabled={sending || reviewing}
-            className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-          <Button type="submit" disabled={sending || reviewing || !input.trim()}>
-            {sending ? "Thinking…" : "Send"}
-          </Button>
-        </form>
-      ) : (
-        <div className="border-t border-border p-4 text-center">
-          <p className="mb-2 text-sm text-muted-foreground">
-            This interview is {interview.status}.
-          </p>
-          <div className="flex justify-center gap-2">
-            {interview.status === "completed" && (
-              <Button onClick={() => router.push("/reports")}>Get my report</Button>
-            )}
-            <Button variant="outline" onClick={() => router.push("/interviews")}>
-              Back to interviews
-            </Button>
-          </div>
-        </div>
-      )}
-      </div>
-
-      {isActive && (
-        <CodeEditorPanel
-          interviewId={interviewId}
-          refreshKey={`${phase}:${messages.length}`}
-          onBusyChange={setReviewing}
-          onReviewed={reloadTranscript}
-          onProblemChange={setCodeActive}
-        />
-      )}
-      </div>
-
       {sendError && (
-        <p role="alert" className="px-4 pb-3 text-sm text-destructive">
+        <Alert role="alert" className="m-3 mt-0">
           {sendError}
-        </p>
+        </Alert>
       )}
     </div>
   );

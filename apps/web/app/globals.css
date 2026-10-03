@@ -2,42 +2,103 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * CyntraAI design tokens. See docs/UI_REFRESH.md for the rationale and the
+ * contrast table. Raw values live in :root / :root.dark; Tailwind names are
+ * mapped in @theme below, so components only ever say `bg-card`, `text-success`.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Surfaces: canvas < card < raised. Neutrals carry a faint indigo tint. */
+  --background: #f7f8fc;
+  --foreground: #12152a;
   --card: #ffffff;
-  --card-foreground: #171717;
-  --primary: #4f46e5;
+  --card-foreground: #12152a;
+  --secondary: #eef0f8;
+  --secondary-foreground: #12152a;
+  --muted: #eef0f8;
+  --muted-foreground: #565d78;
+
+  /* Brand */
+  --primary: #4338ca;
+  --primary-hover: #3730a3;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #171717;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #ede9fe;
-  --accent-foreground: #4f46e5;
-  --destructive: #dc2626;
+  --accent: #eceeff;
+  --accent-foreground: #3730a3;
+
+  /* Lines */
+  --border: #dfe3ef;
+  --border-strong: #c5cbe0;
+  --input: #7f86a3; /* >= 3:1 against card and canvas (WCAG 1.4.11) */
+  --ring: #4338ca;
+
+  /* Semantic */
+  --destructive: #b91c1c;
+  --destructive-soft: #fdeaea;
   --destructive-foreground: #ffffff;
-  --border: #e4e4e7;
-  --ring: #4f46e5;
+  --success: #166534;
+  --success-fill: #16a34a; /* graphics only (bars, rings): 3.3:1 on card */
+  --warning-fill: #d97706; /* 3.2:1 on card */
+  --danger-fill: #dc2626; /* 4.8:1 on card */
+  --success-soft: #e3f5ea;
+  --warning: #92590a;
+  --warning-soft: #fcf1d6;
+  --info: #1d4ed8;
+  --info-soft: #e6eefd;
+
+  /* Atmosphere (decorative only) */
+  --glow-1: rgb(99 102 241 / 0.16);
+  --glow-2: rgb(56 189 248 / 0.1);
+
+  /* Elevation */
+  --elev-1: 0 1px 2px rgb(18 21 42 / 0.05), 0 1px 1px rgb(18 21 42 / 0.03);
+  --elev-2: 0 6px 16px -4px rgb(18 21 42 / 0.09), 0 2px 4px -2px rgb(18 21 42 / 0.06);
+  --elev-3: 0 20px 44px -14px rgb(18 21 42 / 0.22), 0 6px 14px -6px rgb(18 21 42 / 0.1);
 }
 
 :root.dark {
-  --background: #0a0a0a;
-  --foreground: #ededed;
-  --card: #141414;
-  --card-foreground: #ededed;
-  --primary: #818cf8;
-  --primary-foreground: #0a0a0a;
-  --secondary: #1f1f23;
-  --secondary-foreground: #ededed;
-  --muted: #1f1f23;
-  --muted-foreground: #a1a1aa;
-  --accent: #241f4d;
-  --accent-foreground: #818cf8;
-  --destructive: #f87171;
-  --destructive-foreground: #0a0a0a;
-  --border: #27272a;
-  --ring: #818cf8;
+  color-scheme: dark;
+
+  --background: #0a0c16;
+  --foreground: #e9ebf8;
+  --card: #111426;
+  --card-foreground: #e9ebf8;
+  --secondary: #1a1e35;
+  --secondary-foreground: #e9ebf8;
+  --muted: #1a1e35;
+  --muted-foreground: #9ba2c0;
+
+  --primary: #8a93ff;
+  --primary-hover: #a3aaff;
+  --primary-foreground: #0a0c16;
+  --accent: #1e2250;
+  --accent-foreground: #b4baff;
+
+  --border: #252a47;
+  --border-strong: #353c63;
+  --input: #5b6390;
+  --ring: #a3aaff;
+
+  --destructive: #ff8a8a;
+  --destructive-soft: #341517;
+  --destructive-foreground: #0a0c16;
+  --success: #4ade80;
+  --success-fill: #4ade80;
+  --warning-fill: #fbbf24;
+  --danger-fill: #ff8a8a;
+  --success-soft: #10281c;
+  --warning: #fbbf24;
+  --warning-soft: #2e2410;
+  --info: #7db0ff;
+  --info-soft: #14213f;
+
+  --glow-1: rgb(129 140 248 / 0.18);
+  --glow-2: rgb(56 189 248 / 0.07);
+
+  --elev-1: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --elev-2: 0 8px 20px -6px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  --elev-3: 0 24px 48px -14px rgb(0 0 0 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
 @theme inline {
@@ -46,6 +107,7 @@
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -54,20 +116,268 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-fill: var(--success-fill);
+  --color-warning-fill: var(--warning-fill);
+  --color-danger-fill: var(--danger-fill);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
   --color-ring: var(--ring);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-1);
+  --shadow-md: var(--elev-2);
+  --shadow-lg: var(--elev-3);
+  --shadow-xl: var(--elev-3);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
-  transition: background-color 0.2s ease, color 0.2s ease;
+@theme static {
+  /* Radii: controls 10px, cards 14px, large surfaces 18px */
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --animate-page-in: page-in 380ms var(--ease-out) backwards;
+  --animate-fade-up: fade-up 440ms var(--ease-out) backwards;
+  --animate-fade-in: fade-in 220ms ease-out backwards;
+  --animate-pop-in: pop-in 160ms var(--ease-out) backwards;
+  --animate-slide-in: slide-in 360ms var(--ease-out) backwards;
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+  --animate-dot: dot 1.3s ease-in-out infinite;
+  --animate-ring-pulse: ring-pulse 1.8s ease-out infinite;
+
+  @keyframes page-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+  @keyframes dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+  @keyframes ring-pulse {
+    from {
+      box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent);
+    }
+    to {
+      box-shadow: 0 0 0 8px transparent;
+    }
+  }
+  @keyframes bar-grow {
+    from {
+      width: 0;
+    }
+  }
+  @keyframes ring-draw {
+    from {
+      stroke-dashoffset: var(--ring-circ);
+    }
+  }
 }
 
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 4.5rem;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans), system-ui, Arial, Helvetica, sans-serif;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 28%, transparent);
+  }
+
+  /* One consistent, visible keyboard focus indicator for everything clickable. */
+  :where(a, button, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 0.375rem;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--primary);
+  }
+
+  /* Cross-fade for the theme switch where the View Transitions API exists. */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 260ms;
+    animation-timing-function: ease-in-out;
+  }
+}
+
+@layer components {
+  /* Text fields, selects, textareas. Border is 3:1 against its surface. */
+  .field {
+    border: 1px solid var(--input);
+    background-color: var(--card);
+    color: var(--foreground);
+    border-radius: var(--radius-lg);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+  .field::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.85;
+  }
+  .field:hover:not(:disabled) {
+    border-color: var(--foreground);
+  }
+  .field:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ring) 22%, transparent);
+  }
+  .field:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+    background-color: var(--muted);
+  }
+  .field-sm {
+    padding: 0.3rem 0.55rem;
+  }
+  select.field {
+    appearance: none;
+    padding-right: 2.1rem;
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 1rem;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23565d78' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='m5 7.5 5 5 5-5'/></svg>");
+  }
+  :root.dark select.field {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%239ba2c0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='m5 7.5 5 5 5-5'/></svg>");
+  }
+
+  /* Skeleton placeholder with a soft moving sheen. */
+  .skeleton {
+    border-radius: var(--radius-lg);
+    background-color: var(--muted);
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in srgb, var(--foreground) 7%, transparent) 50%,
+      transparent 80%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+
+  /* Children rise in one after another. CSS only, so it is SSR-safe. */
+  .stagger > * {
+    animation: var(--animate-fade-up);
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 45ms; }
+  .stagger > *:nth-child(3) { animation-delay: 90ms; }
+  .stagger > *:nth-child(4) { animation-delay: 135ms; }
+  .stagger > *:nth-child(5) { animation-delay: 180ms; }
+  .stagger > *:nth-child(6) { animation-delay: 225ms; }
+  .stagger > *:nth-child(7) { animation-delay: 270ms; }
+  .stagger > *:nth-child(8) { animation-delay: 315ms; }
+  .stagger > *:nth-child(n + 9) { animation-delay: 360ms; }
+
+  /* Soft brand wash used behind hero blocks. */
+  .brand-wash {
+    background-image:
+      radial-gradient(60rem 28rem at 0% 0%, var(--glow-1), transparent 60%),
+      radial-gradient(40rem 24rem at 100% 0%, var(--glow-2), transparent 60%);
+  }
+
+  /* Fills the viewport below the shell chrome (header, footer, page padding). */
+  .fill-screen {
+    height: calc(100dvh - var(--shell-offset, 9rem));
+    min-height: 26rem;
+  }
+}
+
+/* Animated bar fill / ring stroke (see components/ui/ScoreRing, ProgressBar). */
+.bar-fill {
+  animation: bar-grow 800ms var(--ease-out) 120ms backwards;
+}
+.ring-stroke {
+  animation: ring-draw 1000ms var(--ease-out) 120ms backwards;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -75,7 +385,39 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+  .skeleton {
+    animation: none !important;
+    background-image: none;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+@media print {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    box-shadow: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #12152a !important;
+  }
+  /* Keep score bars and rings coloured on paper. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  article > * {
+    break-inside: avoid;
   }
 }
