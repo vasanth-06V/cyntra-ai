@@ -27,7 +27,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-border p-4 sm:flex">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-border p-4 sm:flex print:hidden">
         <Link href="/dashboard" className="mb-6 px-2 text-lg font-semibold">
           CyntraAI
         </Link>
@@ -45,7 +45,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border px-6 py-3">
+        <header className="flex items-center justify-between border-b border-border px-6 py-3 print:hidden">
           <span className="text-sm text-muted-foreground">{user.email}</span>
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -56,7 +56,7 @@ export async function DashboardShell({ children }: { children: ReactNode }) {
         {/* Below sm the sidebar is hidden, so the same links run as a scrolling bar. */}
         <nav
           aria-label="Main"
-          className="flex gap-1 overflow-x-auto border-b border-border px-4 py-2 sm:hidden"
+          className="flex gap-1 overflow-x-auto border-b border-border px-4 py-2 sm:hidden print:hidden"
         >
           {navItems.map((item) => (
             <Link

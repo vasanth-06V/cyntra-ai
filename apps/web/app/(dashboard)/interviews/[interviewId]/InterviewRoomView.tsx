@@ -253,7 +253,14 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           <p className="mb-2 text-sm text-muted-foreground">
             This interview is {interview.status}.
           </p>
-          <Button onClick={() => router.push("/interviews")}>Back to interviews</Button>
+          <div className="flex justify-center gap-2">
+            {interview.status === "completed" && (
+              <Button onClick={() => router.push("/reports")}>Get my report</Button>
+            )}
+            <Button variant="outline" onClick={() => router.push("/interviews")}>
+              Back to interviews
+            </Button>
+          </div>
         </div>
       )}
       </div>

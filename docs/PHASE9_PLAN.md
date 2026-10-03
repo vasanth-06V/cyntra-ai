@@ -1,6 +1,6 @@
 # Phase 9 — Interview reports (plan, for approval)
 
-Status: **DRAFT 2026-10-03, awaiting the owner's approval.** Nothing below is built yet.
+Status: **APPROVED 2026-10-03 with the suggested options (on demand, in-API purge sweep, print-to-PDF + text). Built and committed; migration `0027_reports` awaits the owner's go-ahead; owner-run `report_eval_live.py` ready.**
 Constraints: free tier only; as few LLM calls as possible (one per report); everything stays in Supabase (no new service).
 
 ## 1. What the candidate gets
