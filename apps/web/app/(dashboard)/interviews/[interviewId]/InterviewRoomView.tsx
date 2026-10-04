@@ -14,6 +14,7 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { CodeEditorPanel } from "@/components/interview/CodeEditorPanel";
 import { PhaseTimer } from "@/components/interview/PhaseTimer";
 import { VoiceBar } from "@/components/interview/VoiceBar";
+import { scrollIntoViewSafe } from "@/lib/scroll";
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type VoiceSettings } from "@/lib/voice/settings";
 import { useVoice } from "@/lib/voice/useVoice";
 import type { ChatMessage } from "@/types/chat";
@@ -55,7 +56,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(DEFAULT_SETTINGS);
   const messagesRef = useRef<ChatMessage[]>([]);
   const sendRef = useRef<(text: string) => void>(() => {});
-  const speakRef = useRef<(text: string) => void>(() => {});
+  const speakRef = useRef<(text: string) => Promise<void>>(() => Promise.resolve());
 
   const lastInterviewerText = useCallback(() => {
     const last = [...messagesRef.current].reverse().find((m) => m.role === "assistant");
@@ -68,7 +69,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       .then((transcript) => {
         setMessages(transcript.map(toChatMessage));
         const last = transcript[transcript.length - 1];
-        if (last && last.speaker === "ai") speakRef.current(last.text);
+        if (last && last.speaker === "ai") void speakRef.current(last.text);
       })
       .catch(() => {
         // the next turn reloads it anyway
@@ -94,7 +95,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     lastInterviewerText,
   });
   useEffect(() => {
-    speakRef.current = (text) => void voice.speak(text);
+    speakRef.current = (text) => Promise.resolve(voice.speak(text));
   });
 
   function changeVoiceSettings(next: VoiceSettings) {
@@ -107,7 +108,8 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
     changeVoiceSettings({ ...voiceSettings, enabled: true, consented: true });
     const last = lastInterviewerText();
     const endsWithInterviewer = messagesRef.current[messagesRef.current.length - 1]?.role === "assistant";
-    if (last && endsWithInterviewer) void voice.speak(last);
+    // `force`: the hook's `active` flag only catches up after the next render.
+    if (last && endsWithInterviewer) void voice.speak(last, { force: true });
   }
 
   useEffect(() => {
@@ -131,7 +133,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
   }, [interviewId, attempt]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    scrollIntoViewSafe(bottomRef.current, { block: "end" });
   }, [messages]);
 
   // Ticks the displayed timer down client-side between turns, so it doesn't
@@ -253,9 +255,12 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
           created_at: "",
         },
       ]);
-      speakRef.current(response.message);
+      const spoken = speakRef.current(response.message);
       if (response.is_final_phase && response.minutes_remaining <= 0) {
-        await autoComplete();
+        // Closing the room switches voice off and cuts speech, so let the wrap-up
+        // finish first. Not awaited here: the composer must not stay "Thinking...".
+        // (Resolves at once when voice is off; also when the user stops or leaves.)
+        void spoken.then(autoComplete);
       }
     } catch (err) {
       // Keep the room; take the unsent bubble back out and restore the draft
@@ -329,6 +334,7 @@ export function InterviewRoomView({ interviewId }: { interviewId: string }) {
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-background/60 px-4 py-3">
+        <h1 className="sr-only">Interview room</h1>
         <PhaseTimer phase={phase || interview.status} minutesRemaining={minutesRemaining} />
         <div className="flex items-center gap-2">
           <Badge tone={turn.tone} className="gap-1.5" aria-hidden="true">

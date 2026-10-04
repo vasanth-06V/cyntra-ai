@@ -1,5 +1,7 @@
 import { ReportDetailView } from "./ReportDetailView";
 
+export const metadata = { title: "Interview report" };
+
 export default async function ReportPage({
   params,
 }: {

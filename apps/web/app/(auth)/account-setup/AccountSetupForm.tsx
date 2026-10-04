@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +32,7 @@ export function AccountSetupForm({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const passwordSaved = useRef<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -52,13 +53,20 @@ export function AccountSetupForm({
 
     // 1. Attach a password credential to this Google-created account, so it
     //    becomes a valid alternate login method going forward.
-    const { error: passwordError } = await supabase.auth.updateUser({
-      password,
-    });
-    if (passwordError) {
-      setError(passwordError.message);
-      setLoading(false);
-      return;
+    //    A retry after a partial success (password saved, profile insert failed)
+    //    must not dead-end: Supabase rejects an unchanged password, so skip the
+    //    call when this exact password was already saved, and treat the
+    //    same-password rejection as success.
+    if (passwordSaved.current !== password) {
+      const { error: passwordError } = await supabase.auth.updateUser({
+        password,
+      });
+      if (passwordError && (passwordError as { code?: string }).code !== "same_password") {
+        setError(passwordError.message);
+        setLoading(false);
+        return;
+      }
+      passwordSaved.current = password;
     }
 
     // 2. Create the profiles row -- this is the actual account-creation
@@ -77,7 +85,8 @@ export function AccountSetupForm({
       .from("profiles")
       .insert({ id: user.id, full_name: fullName || null });
 
-    if (profileError) {
+    // 23505: the profile already exists (an earlier attempt or another tab got there first).
+    if (profileError && (profileError as { code?: string }).code !== "23505") {
       setError(profileError.message);
       setLoading(false);
       return;

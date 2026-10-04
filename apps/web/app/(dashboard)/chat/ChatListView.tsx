@@ -61,6 +61,7 @@ export function ChatListView() {
         tone: "error",
         title: "Could not load older chats",
         description: err instanceof ApiError ? err.message : "Please try again.",
+        action: { label: "Retry", onClick: () => void loadMore() },
       });
     } finally {
       setLoadingMore(false);

@@ -1,11 +1,5 @@
 import type { ProviderName } from "./keys";
 
-export type ScoreRequest = {
-  resume_id: string;
-  jd_text: string;
-  provider: ProviderName;
-};
-
 export type RequirementCoverage = {
   term: string;
   kind: "must" | "nice";

@@ -1,5 +1,7 @@
 import { InterviewRoomView } from "./InterviewRoomView";
 
+export const metadata = { title: "Interview room" };
+
 export default async function InterviewRoomPage({
   params,
 }: {

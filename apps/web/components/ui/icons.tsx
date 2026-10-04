@@ -26,12 +26,6 @@ function Icon({ size = 18, children, ...props }: IconProps & { children: ReactNo
   );
 }
 
-export const HomeIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M3 11.5 12 4l9 7.5" />
-    <path d="M5.5 10v9.5h13V10" />
-  </Icon>
-);
 export const ChatIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-3.9A8 8 0 1 1 20 12Z" />
@@ -158,12 +152,6 @@ export const UserIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="8" r="4" />
     <path d="M4 20.500c.8-3.700 3.900-6 8-6s7.200 2.300 8 6" />
-  </Icon>
-);
-export const InboxIcon = (p: IconProps) => (
-  <Icon {...p}>
-    <path d="M3 13.500 6 5h12l3 8.500V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5.500Z" />
-    <path d="M3 13.500h5l1 2.500h6l1-2.500h5" />
   </Icon>
 );
 

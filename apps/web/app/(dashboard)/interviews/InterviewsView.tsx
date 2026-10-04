@@ -56,7 +56,13 @@ export function InterviewsView() {
       setInterviews((prev) => [...prev, ...next.filter((n) => !prev.some((p) => p.id === n.id))]);
       setHasMore(next.length >= PAGE_SIZE);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load older interviews.");
+      // Keep the interviews already loaded; say what failed and offer a retry.
+      toast({
+        tone: "error",
+        title: "Could not load older interviews",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        action: { label: "Retry", onClick: () => void loadMore() },
+      });
     } finally {
       setLoadingMore(false);
     }

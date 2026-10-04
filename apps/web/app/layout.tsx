@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CyntraAI",
+  title: { default: "CyntraAI", template: "%s | CyntraAI" },
   description: "An AI platform for chat, mock interviews, and resume ATS scoring.",
 };
 

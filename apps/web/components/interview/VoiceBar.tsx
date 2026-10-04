@@ -105,6 +105,11 @@ export function VoiceBar({
           {status}
         </p>
         <div className="flex items-center gap-2">
+          {voice.error && (
+            <Button type="button" variant="outline" size="sm" onClick={voice.clearError}>
+              Try microphone again
+            </Button>
+          )}
           {voice.speaking && (
             <Button type="button" variant="outline" size="sm" onClick={voice.stopSpeaking}>
               Stop speaking

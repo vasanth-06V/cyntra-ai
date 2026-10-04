@@ -15,6 +15,7 @@ import { fetchResumes, resumeName } from "@/lib/resumes";
 import { AtsHistoryPanel } from "@/components/ats/AtsHistoryPanel";
 import { ScoreBreakdown } from "@/components/ats/ScoreBreakdown";
 import { formatDateTime } from "@/lib/format";
+import { scrollIntoViewSafe } from "@/lib/scroll";
 import type { AtsHistoryDetail, ScoreResponse } from "@/types/ats";
 import { PROVIDER_INFO, type ProviderKey, type ProviderName } from "@/types/keys";
 import type { Resume } from "@/types/resumes";
@@ -85,7 +86,7 @@ export function AtsScoreView() {
       setHistoryVersion((n) => n + 1);
       // Bring the result into view and let screen readers find it.
       setTimeout(() => {
-        resultRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+        scrollIntoViewSafe(resultRef.current, { block: "start" });
         resultRef.current?.focus({ preventScroll: true });
       }, 50);
     } catch (err) {
@@ -99,7 +100,7 @@ export function AtsScoreView() {
     setSaved(detail);
     setShownHistoryId(detail.id);
     setTimeout(() => {
-      resultRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      scrollIntoViewSafe(resultRef.current, { block: "start" });
       resultRef.current?.focus({ preventScroll: true });
     }, 50);
   }
@@ -109,7 +110,7 @@ export function AtsScoreView() {
     setResult(null);
     setShownHistoryId(null);
     jdRef.current?.focus();
-    jdRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    scrollIntoViewSafe(jdRef.current, { block: "center" });
   }
 
   const shown = saved ? saved.result : result;

@@ -18,6 +18,8 @@ import { useReportGeneration } from "@/lib/reports/useReportGeneration";
 import { INTERVIEW_TYPE_LABELS, type Interview, type InterviewType } from "@/types/interviews";
 import type { ReportSummary } from "@/types/reports";
 
+const PAGE_SIZE = 50;
+
 const typeLabel = (t: string) => INTERVIEW_TYPE_LABELS[t as InterviewType] ?? t;
 
 export function ReportsView() {
@@ -29,6 +31,10 @@ export function ReportsView() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // The API returns interviews 50 at a time; older completed ones are fetched on request.
+  const [fetchedCount, setFetchedCount] = useState(0);
+  const [hasMoreInterviews, setHasMoreInterviews] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const openReport = useCallback((id: string) => router.push(`/reports/${id}`), [router]);
   const generation = useReportGeneration(openReport);
@@ -41,6 +47,8 @@ export function ReportsView() {
       .then(([r, i]) => {
         setReports(r);
         setInterviews(i.filter((x) => x.status === "completed"));
+        setFetchedCount(i.length);
+        setHasMoreInterviews(i.length >= PAGE_SIZE);
         setLoadError(null);
       })
       .catch((err) =>
@@ -48,6 +56,28 @@ export function ReportsView() {
       )
       .finally(() => setLoading(false));
   }, [attempt]);
+
+  async function loadMoreInterviews() {
+    setLoadingMore(true);
+    try {
+      const next = await apiClient.get<Interview[]>(`/interviews?limit=${PAGE_SIZE}&offset=${fetchedCount}`);
+      setFetchedCount((n) => n + next.length);
+      setHasMoreInterviews(next.length >= PAGE_SIZE);
+      setInterviews((prev) => [
+        ...prev,
+        ...next.filter((x) => x.status === "completed" && !prev.some((p) => p.id === x.id)),
+      ]);
+    } catch (err) {
+      toast({
+        tone: "error",
+        title: "Could not load older interviews",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        action: { label: "Retry", onClick: () => void loadMoreInterviews() },
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function handleDelete(r: ReportSummary) {
     const ok = await confirm({
@@ -179,6 +209,16 @@ export function ReportsView() {
                   );
                 })}
               </ul>
+            )}
+            {hasMoreInterviews && (
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => void loadMoreInterviews()}
+                loading={loadingMore}
+              >
+                Show older interviews
+              </Button>
             )}
             {generation.error && (
               <Alert role="alert" className="mt-3">

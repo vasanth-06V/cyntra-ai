@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ChatIcon, SendIcon } from "@/components/ui/icons";
+import { scrollIntoViewSafe } from "@/lib/scroll";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage } from "@/types/chat";
 import { PROVIDER_INFO, type ProviderName } from "@/types/keys";
@@ -29,7 +30,7 @@ export function ChatWindow({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+    scrollIntoViewSafe(bottomRef.current, { block: "end" });
   }, [messages]);
 
   async function handleSend(e?: React.FormEvent) {

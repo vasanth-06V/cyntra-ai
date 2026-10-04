@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/ui/Logo";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
-export const metadata = { title: "Privacy — CyntraAI" };
+export const metadata = { title: "Privacy" };
 
 export default function PrivacyPage() {
   return (
@@ -56,6 +56,10 @@ export default function PrivacyPage() {
               Chrome and Edge that processing is done by Google&apos;s speech service. Voice is optional;
               typing always works. The interviewer&apos;s spoken voice uses your browser&apos;s built-in voices (some browsers&apos; voices are provided online).
             </li>
+            <li>
+              The code editor&apos;s files are loaded from the jsDelivr CDN, so jsDelivr sees your IP address
+              when you open a coding round. No code is sent to it.
+            </li>
             <li>We do not sell your data and we do not use it to train models.</li>
           </ul>
         </Card>
@@ -65,7 +69,7 @@ export default function PrivacyPage() {
           <ul className="mt-3 list-disc space-y-1.5 pl-5 marker:text-primary">
             <li>Delete any saved API key in Settings → API Keys.</li>
             <li>Delete a resume on the Resumes page, and a report with “Delete now” on the report page.</li>
-            <li>Browser-only preferences (voice settings, an unsent code draft) live in your browser and can be cleared there.</li>
+            <li>Browser-only preferences (voice settings, code drafts) live in your browser and can be cleared there.</li>
           </ul>
         </Card>
 

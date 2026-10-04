@@ -12,19 +12,87 @@ import { CodeIcon } from "@/components/ui/icons";
 import type { Job } from "@/types/jobs";
 import type { ProblemState, SubmissionStarted } from "@/types/coding";
 
-// Monaco is large: load it only when a coding problem is actually active.
-const Editor = dynamic(() => import("@monaco-editor/react"), {
-  ssr: false,
-  loading: () => (
-    <div role="status" className="flex h-full min-h-[260px] flex-col gap-2 p-4">
-      <span className="sr-only">Loading editor…</span>
-      <Skeleton className="h-4 w-1/3" />
-      <Skeleton className="h-4 w-2/3" />
-      <Skeleton className="h-4 w-1/2" />
-      <Skeleton className="h-4 w-3/5" />
+type EditorProps = {
+  value: string;
+  onChange: (value: string | undefined) => void;
+  language: string;
+  dark: boolean;
+  readOnly: boolean;
+};
+
+const EDITOR_LOAD_TIMEOUT_MS = 25_000;
+
+/** Used when Monaco cannot be loaded (its files come from a CDN): typing and submitting still work. */
+function EditorFallback({ value, onChange, readOnly }: EditorProps) {
+  return (
+    <div className="flex h-full flex-col gap-2 p-3">
+      <p role="status" className="text-xs text-muted-foreground">
+        Editor failed to load - reload the page to get syntax highlighting. You can still type your solution here.
+      </p>
+      <textarea
+        aria-label="Solution code"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        readOnly={readOnly}
+        spellCheck={false}
+        className="field min-h-[220px] flex-1 resize-none font-mono text-[13px]"
+      />
     </div>
-  ),
-});
+  );
+}
+
+// Monaco is large: load it only when a coding problem is actually active. A
+// failed or hanging load (blocked CDN, offline) falls back to a plain textarea.
+const Editor = dynamic<EditorProps>(
+  async () => {
+    try {
+      const monaco = await Promise.race([
+        import("@monaco-editor/react").then(async (m) => {
+          await m.loader.init();
+          return m;
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("editor load timeout")), EDITOR_LOAD_TIMEOUT_MS)
+        ),
+      ]);
+      const Monaco = monaco.default;
+      return function MonacoEditor({ value, onChange, language, dark, readOnly }: EditorProps) {
+        return (
+          <Monaco
+            height="100%"
+            language={language}
+            value={value}
+            onChange={onChange}
+            theme={dark ? "vs-dark" : "light"}
+            options={{
+              readOnly,
+              minimap: { enabled: false },
+              fontSize: 14,
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 4,
+              ariaLabel: "Solution code",
+            }}
+          />
+        );
+      };
+    } catch {
+      return EditorFallback;
+    }
+  },
+  {
+    ssr: false,
+    loading: () => (
+      <div role="status" className="flex h-full min-h-[260px] flex-col gap-2 p-4">
+        <span className="sr-only">Loading editor…</span>
+        <Skeleton className="h-4 w-1/3" />
+        <Skeleton className="h-4 w-2/3" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-3/5" />
+      </div>
+    ),
+  }
+);
 
 // Any language is accepted; these get syntax highlighting and a menu entry.
 const LANGUAGES: { label: string; monaco: string }[] = [
@@ -46,7 +114,7 @@ const LANGUAGES: { label: string; monaco: string }[] = [
 const OTHER = "Other…";
 
 const POLL_EVERY_MS = 1500;
-const GIVE_UP_AFTER_MS = 3 * 60 * 1000;
+const GIVE_UP_AFTER_MS = 5 * 60 * 1000; // matches the backend worst case for a code review
 const PHASE_REFRESH_MS = 20_000;
 const MAX_CODE = 8000;
 
@@ -292,20 +360,11 @@ export function CodeEditorPanel({
 
       <div className="min-h-[260px] flex-1">
         <Editor
-          height="100%"
-          language={monacoLanguage}
           value={code}
           onChange={onCodeChange}
-          theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
-          options={{
-            readOnly: locked,
-            minimap: { enabled: false },
-            fontSize: 14,
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-            tabSize: 4,
-            ariaLabel: "Solution code",
-          }}
+          language={monacoLanguage}
+          dark={resolvedTheme === "dark"}
+          readOnly={locked}
         />
       </div>
 

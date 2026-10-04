@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CyntraAI web app
 
-## Getting Started
+Next.js 16 (App Router, Turbopack), React 19, Tailwind v4, framer-motion, Supabase (auth + row-level security) and a FastAPI backend in `apps/api`. This Next.js version differs from older ones: read the guides in `node_modules/next/dist/docs/` before changing anything framework-specific (see `AGENTS.md`).
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # fill in the values, see below
+npm install
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The backend (`apps/api`) must be running at `NEXT_PUBLIC_API_URL` for chat, interviews, ATS and reports.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx tsc --noEmit     # types (run `npx next typegen` first if LayoutProps is missing)
+npx eslint .         # lint
+npx vitest run       # unit and component tests (jsdom per file)
+npx next build       # production build
+```
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+See `.env.example`. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_API_URL` are public (inlined at build time). `STORAGE_*` configure the S3-compatible bucket for resumes and are server-only. `NEXT_PUBLIC_ENABLE_DEMO_SIGNUP=true` turns the temporary email sign-up page back on in a production build (it is always on in development).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `app/(auth)` sign-in, account setup, onboarding, temporary demo sign-up.
+- `app/(dashboard)` the signed-in app: chat, interviews (setup and room), ATS score, resumes, reports, settings (API keys, team), question bank.
+- `app/api/resumes` route handlers for resume upload, rename and delete (Supabase + storage).
+- `components/ui` design-system primitives (`Button`, `Card`, `ListRow`, `ConfirmDialog`, `Toast`, ...), `components/<area>` feature components.
+- `lib/api-client` bearer-token fetch client for the FastAPI backend (retries reads while the server wakes up).
+- `lib/voice` browser speech recognition and synthesis for the interview room.
+- `lib/auth/guards.ts` server-side route guards, `proxy.ts` Supabase session refresh.
+- `docs/UI_REFRESH.md` and `docs/FRONTEND_GAPS.md` (repo root) describe the design tokens and the established UI patterns.

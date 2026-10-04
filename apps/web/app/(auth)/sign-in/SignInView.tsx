@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { demoSignUpEnabled } from "@/lib/demo-signup";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Alert } from "@/components/ui/Alert";
@@ -71,12 +72,14 @@ export function SignInView({ initialError = null }: { initialError?: string | nu
 
             {/* TEMPORARY DEV/DEMO LINK -- remove alongside app/(auth)/sign-up
                 once Google sign-in is configured and verified end-to-end. */}
-            <a
-              href="/sign-up"
-              className="mt-3 block text-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Create a demo account (dev only)
-            </a>
+            {demoSignUpEnabled() && (
+              <a
+                href="/sign-up"
+                className="mt-3 block text-center text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                Create a demo account (dev only)
+              </a>
+            )}
           </>
         ) : (
           <EmailPasswordSignIn onBack={() => setEmailMode(false)} />

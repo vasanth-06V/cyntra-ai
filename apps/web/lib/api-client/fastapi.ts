@@ -122,6 +122,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const timeoutMs = isRead ? GET_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 
   let attempt = 0;
+  let counted = false;
   try {
     while (true) {
       let res: Response | null = null;
@@ -133,7 +134,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
       const unreachable = res === null || RETRYABLE_STATUSES.has(res.status);
       if (unreachable && isRead && attempt < WAKE_RETRY_DELAYS_MS.length) {
-        serverStatus.setWaking(true);
+        if (!counted) {
+          counted = true;
+          serverStatus.beginWaking();
+        }
         await sleep(WAKE_RETRY_DELAYS_MS[attempt++]);
         continue;
       }
@@ -146,7 +150,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       return await res.json();
     }
   } finally {
-    if (attempt > 0) serverStatus.setWaking(false);
+    if (counted) serverStatus.endWaking();
   }
 }
 

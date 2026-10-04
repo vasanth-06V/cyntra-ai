@@ -1,5 +1,7 @@
 import { SignInView } from "./SignInView";
 
+export const metadata = { title: "Sign in" };
+
 export default async function SignInPage({
   searchParams,
 }: {

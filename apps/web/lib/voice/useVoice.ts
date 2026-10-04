@@ -77,16 +77,23 @@ export function useVoice({ active, busy, settings, onUtterance, lastInterviewerT
 
   const spoke = useRef(false);
 
+  // Every speak() takes a number; only the newest one may flip `speaking` back
+  // to false, so a superseded utterance finishing late cannot reopen the mic.
+  const speakGen = useRef(0);
+
   const speakInternal = useCallback(
-    async (text: string, opts: { isNudge?: boolean } = {}) => {
-      if (!live.current.active || !text.trim()) return;
+    async (text: string, opts: { isNudge?: boolean; force?: boolean } = {}) => {
+      // `force`: called from the click that turns voice on, before `live.current.active` has caught up.
+      if ((!live.current.active && !opts.force) || !text.trim()) return;
       clearNudge();
       if (!opts.isNudge) nudges.current = 0;
       spoke.current = true;
       speakingRef.current = true;
       setSpeaking(true);
+      const mine = ++speakGen.current;
       const { voiceName, rate } = live.current.settings;
       await speakText(text, { voiceName, rate });
+      if (mine !== speakGen.current) return;
       speakingRef.current = false;
       setSpeaking(false);
     },
@@ -201,16 +208,28 @@ export function useVoice({ active, busy, settings, onUtterance, lastInterviewerT
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
     confirmTimer.current = null;
     buffer.current?.reset();
+    speakGen.current++;
+    speakingRef.current = false;
     const t = setTimeout(() => {
       setCaption("");
       setPending(false);
       setEditing(false);
       setSpeaking(false);
+      // A blocked-microphone error must not outlive voice mode: turning voice on again retries.
+      setError(null);
     }, 0);
     return () => clearTimeout(t);
   }, [active, clearNudge]);
 
-  const speak = useCallback((text: string) => speakInternal(text), [speakInternal]);
+  /**
+   * Speaks `text`; resolves when it has finished (or was cut off). `force` lets a
+   * click handler speak in the same tick that switches voice on.
+   */
+  const speak = useCallback(
+    (text: string, opts: { force?: boolean } = {}) => speakInternal(text, { force: opts.force }),
+    [speakInternal]
+  );
+  const clearError = useCallback(() => setError(null), []);
 
   const stopSpeaking = useCallback(() => {
     cancelSpeech();
@@ -248,6 +267,6 @@ export function useVoice({ active, busy, settings, onUtterance, lastInterviewerT
     changeCaption,
     sendNow,
     resume,
-    clearError: () => setError(null),
+    clearError,
   };
 }

@@ -15,6 +15,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { ChatMessage, Conversation } from "@/types/chat";
 import type { ProviderKey, ProviderName } from "@/types/keys";
 
+// The API returns the latest 200 messages by default and accepts up to 500.
+const PAGE_LIMIT = 200;
+const MAX_LIMIT = 500;
+
 export function ChatThreadView({ conversationId }: { conversationId: string }) {
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [validProviders, setValidProviders] = useState<ProviderName[]>([]);
@@ -24,6 +28,9 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
   const [title, setTitle] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const renameOpener = useRef<HTMLButtonElement>(null);
+  const [limit, setLimit] = useState(PAGE_LIMIT);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [windowKey, setWindowKey] = useState(0);
 
   // The title only decorates the header, so a failure here is silent: the thread still works.
   useEffect(() => {
@@ -45,6 +52,25 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
       toast({ tone: "success", title: "Chat renamed" });
     } catch (err) {
       throw new Error(err instanceof ApiError ? err.message : "Could not rename this chat.");
+    }
+  }
+
+  async function loadOlder() {
+    setLoadingOlder(true);
+    try {
+      const all = await apiClient.get<ChatMessage[]>(`/chat/conversations/${conversationId}/messages?limit=${MAX_LIMIT}`);
+      setMessages(all);
+      setLimit(MAX_LIMIT);
+      setWindowKey((n) => n + 1); // ChatWindow seeds its list once; remount with the longer one
+    } catch (err) {
+      toast({
+        tone: "error",
+        title: "Could not load older messages",
+        description: err instanceof ApiError ? err.message : "Please try again.",
+        action: { label: "Retry", onClick: () => void loadOlder() },
+      });
+    } finally {
+      setLoadingOlder(false);
     }
   }
 
@@ -145,8 +171,17 @@ export function ChatThreadView({ conversationId }: { conversationId: string }) {
           </>
         )}
       </div>
+      {messages.length >= limit && limit < MAX_LIMIT && (
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+          <span>Showing the latest {messages.length} messages.</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadOlder()} loading={loadingOlder}>
+            Show older messages
+          </Button>
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <ChatWindow
+          key={windowKey}
           conversationId={conversationId}
           initialMessages={messages}
           validProviders={validProviders}

@@ -7,6 +7,7 @@ import { ApiError, apiClient } from "@/lib/api-client/fastapi";
 import { InterviewRoomView } from "./InterviewRoomView";
 
 const push = vi.hoisted(() => vi.fn());
+const speakMock = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }));
 vi.mock("@/lib/api-client/fastapi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api-client/fastapi")>()),
@@ -25,7 +26,7 @@ vi.mock("@/lib/voice/useVoice", () => ({
     editing: false,
     caption: "",
     error: null,
-    speak: vi.fn(),
+    speak: speakMock,
     sendNow: vi.fn(),
     stopSpeaking: vi.fn(),
     edit: vi.fn(),
@@ -63,9 +64,58 @@ beforeEach(() => {
   push.mockReset();
   vi.mocked(apiClient.get).mockReset();
   vi.mocked(apiClient.post).mockReset();
+  speakMock.mockReset();
 });
 
 describe("InterviewRoomView", () => {
+  it("has a page heading for screen readers", async () => {
+    load();
+    renderWithProviders(<InterviewRoomView interviewId="i1" />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Interview room" })).toBeInTheDocument();
+  });
+
+  it("lets the closing message finish before auto-completing when time runs out (M-4)", async () => {
+    load();
+    let finishSpeech: () => void = () => {};
+    speakMock.mockImplementation(() => new Promise<void>((resolve) => (finishSpeech = resolve)));
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/interviews/i1/turns") {
+        return { message: "Thanks, that's all.", phase: "wrap_up", minutes_remaining: 0, is_final_phase: true } as never;
+      }
+      return interview({ status: "completed" }) as never;
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<InterviewRoomView interviewId="i1" />);
+    await user.type(await screen.findByLabelText("Your answer"), "Final answer");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await within(screen.getByRole("log")).findByText("Thanks, that's all.")).toBeInTheDocument();
+    await waitFor(() => expect(speakMock).toHaveBeenCalledWith("Thanks, that's all."));
+    // Still speaking: the room must stay open (completing would silence the voice).
+    await new Promise((r) => setTimeout(r, 50));
+    expect(apiClient.post).not.toHaveBeenCalledWith("/interviews/i1/complete");
+    expect(screen.getByLabelText("Your answer")).toBeInTheDocument();
+
+    finishSpeech();
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/interviews/i1/complete"));
+    expect(await screen.findByRole("button", { name: "Get my report" })).toBeInTheDocument();
+  });
+
+  it("completes at once on the final reply when nothing is being spoken", async () => {
+    load();
+    vi.mocked(apiClient.post).mockImplementation(async (path: string) => {
+      if (path === "/interviews/i1/turns") {
+        return { message: "Thanks.", phase: "wrap_up", minutes_remaining: 0, is_final_phase: true } as never;
+      }
+      return interview({ status: "completed" }) as never;
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<InterviewRoomView interviewId="i1" />);
+    await user.type(await screen.findByLabelText("Your answer"), "Final answer");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalledWith("/interviews/i1/complete"));
+  });
+
   it("sends an answer to the turn endpoint and shows the interviewer's reply", async () => {
     load();
     vi.mocked(apiClient.post).mockResolvedValue({

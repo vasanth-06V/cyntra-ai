@@ -41,10 +41,18 @@ export function NotificationsBell() {
 
   useEffect(() => {
     const first = setTimeout(() => void load(), 0);
-    const every = setInterval(() => void load(), REFRESH_MS);
+    // No polling while the tab is hidden; catch up as soon as it is visible again.
+    const every = setInterval(() => {
+      if (!document.hidden) void load();
+    }, REFRESH_MS);
+    const onVisible = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       clearTimeout(first);
       clearInterval(every);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
 

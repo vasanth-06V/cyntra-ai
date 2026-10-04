@@ -28,7 +28,7 @@ const INTERVIEW_TYPES = Object.keys(INTERVIEW_TYPE_LABELS) as InterviewType[];
 const JD_MIN = 10;
 const JD_MAX = 20000;
 const POLL_EVERY_MS = 1500;
-const GIVE_UP_AFTER_MS = 4 * 60 * 1000;
+const GIVE_UP_AFTER_MS = 6 * 60 * 1000; // matches the backend worst case for interview setup
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

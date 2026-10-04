@@ -228,8 +228,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
         <Card className="p-5">
           <h2 className="text-sm font-semibold">Coding round</h2>
           <ul className="mt-3 flex flex-col gap-4">
-            {report.coding.map((c) => (
-              <li key={c.problem} className="text-sm">
+            {report.coding.map((c, ci) => (
+              <li key={`${c.problem}-${ci}`} className="text-sm">
                 <p className="font-medium">
                   Problem {c.problem} · {c.language}, {c.line_count} lines ·{" "}
                   <span className={c.result === "correct" || c.result === "mostly_correct" ? "text-success" : "text-destructive"}>
@@ -242,8 +242,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
                   </p>
                 )}
                 {[...c.issues.map((t) => `Issue: ${t}`), ...c.edge_cases_missed.map((t) => `Missed edge case: ${t}`)].map(
-                  (line) => (
-                    <p key={line} className="mt-1 text-muted-foreground">
+                  (line, li) => (
+                    <p key={li} className="mt-1 text-muted-foreground">
                       {line}
                     </p>
                   )
@@ -258,8 +258,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
         <Card className="p-5">
           <h2 className="text-sm font-semibold">Phase by phase</h2>
           <ul className="mt-3 flex flex-col gap-2 text-sm">
-            {report.phase_notes.map((n) => (
-              <li key={n.phase}>
+            {report.phase_notes.map((n, ni) => (
+              <li key={`${n.phase}-${ni}`}>
                 <span className="font-medium capitalize">{n.phase.replace(/_/g, " ")}:</span>{" "}
                 <span className="text-muted-foreground">{n.note}</span>
               </li>
@@ -272,8 +272,8 @@ export function ReportDetailView({ interviewId }: { interviewId: string }) {
         <Card className="p-5">
           <h2 className="text-sm font-semibold">Next steps</h2>
           <ol className="mt-3 list-decimal pl-5 text-sm">
-            {report.next_steps.map((s) => (
-              <li key={s} className="mt-1">
+            {report.next_steps.map((s, si) => (
+              <li key={si} className="mt-1">
                 {s}
               </li>
             ))}

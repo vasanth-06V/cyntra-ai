@@ -137,6 +137,47 @@ describe("POST /api/resumes", () => {
     expect(res.status).toBe(500);
     expect((await res.json()).code).toBeUndefined();
   });
+
+  it("refuses an oversized body from Content-Length alone, before reading it", async () => {
+    const formData = vi.fn();
+    const req = {
+      headers: new Headers({ "content-length": String(5 * 1024 * 1024) }),
+      formData,
+    } as unknown as Request;
+    const res = await POST(req);
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toMatch(/too large/i);
+    expect(formData).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it("gives the processing call a timeout signal and reports success without an error", async () => {
+    const res = await POST(uploadRequest());
+    const body = await res.json();
+    expect(body.processingError).toBeNull();
+    const init = vi.mocked(fetch).mock.calls[0][1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("keeps the upload and says so when processing times out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new DOMException("The operation timed out", "TimeoutError");
+      })
+    );
+    const res = await POST(uploadRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.resume).toBeTruthy();
+    expect(body.processingError).toMatch(/taking too long/i);
+  });
+
+  it("reports the API's own message when processing fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "parse failed" }), { status: 422 })));
+    const body = await (await POST(uploadRequest())).json();
+    expect(body.processingError).toBe("parse failed");
+  });
 });
 
 describe("PATCH /api/resumes/:id (rename)", () => {

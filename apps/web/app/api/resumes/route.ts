@@ -14,6 +14,11 @@ const CONTENT_TYPES: Record<string, string> = {
 // Resumes are small text documents (typically ~200 KB). Keep this equal to
 // _MAX_FILE_BYTES in api/app/rag/service.py and the UI hint in ResumesView.
 const MAX_FILE_SIZE_BYTES = 500 * 1024; // 500KB
+// A multipart body is slightly larger than the file inside it. Anything above this
+// is refused from the Content-Length header alone, before the body is buffered.
+const MAX_BODY_BYTES = MAX_FILE_SIZE_BYTES + 100 * 1024;
+// Processing (parse, chunk, embed) on a cold API can take a while, but never forever.
+const PROCESS_TIMEOUT_MS = 90_000;
 
 function resumeLimitResponse() {
   return NextResponse.json(
@@ -46,6 +51,11 @@ export async function POST(request: Request) {
   }
   if ((count ?? 0) >= MAX_RESUMES) {
     return resumeLimitResponse();
+  }
+
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "File is too large (max 500KB)" }, { status: 413 });
   }
 
   let formData: FormData;
@@ -126,14 +136,18 @@ export async function POST(request: Request) {
       {
         method: "POST",
         headers: { Authorization: `Bearer ${session?.access_token}` },
+        signal: AbortSignal.timeout(PROCESS_TIMEOUT_MS),
       }
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({ detail: res.statusText }));
       processingError = body.detail ?? res.statusText;
     }
-  } catch {
-    processingError = "Could not reach the processing service";
+  } catch (err) {
+    processingError =
+      err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")
+        ? "Processing is taking too long -- use Retry processing in a moment."
+        : "Could not reach the processing service";
   }
 
   return NextResponse.json({ resume, processingError });
