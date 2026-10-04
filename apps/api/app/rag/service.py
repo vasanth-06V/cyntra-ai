@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 
 from app.core import background
 from app.core.errors import AppError
-from app.core.storage import download_bytes
+from app.core.storage import MAX_DOWNLOAD_BYTES, download_bytes
 from app.db import resumes as resumes_repo
 from app.db.keys import get_key_row
 from app.llm import gateway
@@ -32,7 +32,7 @@ _DIGEST_OPTIONS = LLMOptions(
 )
 _DIGEST_INPUT_TOKENS = 1500
 _DIGEST_MAX_TOKENS = 300
-_MAX_FILE_BYTES = 500 * 1024  # keep equal to the web upload limit
+_MAX_FILE_BYTES = MAX_DOWNLOAD_BYTES  # keep equal to the web upload limit
 _MAX_CHUNKS = 60  # keeps embedding to a single batched request
 _MAX_TEXT_CHARS = 40_000  # ~10 pages of dense text; a resume is far shorter
 
@@ -124,6 +124,14 @@ async def process_resume(user_id: str, resume_id: str) -> int:
     if resume.get("content_hash") == digest_hash and resume.get("parsed_text"):
         existing = await resumes_repo.chunk_count(resume_id)
         if existing:
+            if not resume.get("digest"):
+                # An earlier digest attempt failed: try again now (it is what
+                # lets interviews skip an embedding request).
+                background.schedule(
+                    _store_digest(user_id, resume_id, text),
+                    name=f"digest:{resume_id}",
+                    key=f"digest:{resume_id}",
+                )
             return existing  # identical content already chunked and embedded this way
 
     chunks = chunk_resume(text)

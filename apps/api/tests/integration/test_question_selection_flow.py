@@ -40,8 +40,8 @@ async def test_another_users_history_does_not_affect_me(client, keyed):
 
 async def test_only_questions_of_the_interview_type_are_candidates(client, keyed):
     _seed_questions(keyed, 3, "hr")  # wrong type for a coding interview
-    started, _ = await _start(client, keyed, type_="coding")
-    assert _selected(keyed, started.json()["id"]) == []
+    started, _ = await _start(client, keyed, type_="coding", seed_bank=False)
+    assert started.status_code == 422 and started.json()["error"]["code"] == "no_questions"  # none of them was chosen
 
 
 async def test_the_retrieval_call_never_asks_for_or_receives_test_cases(client, keyed):

@@ -1,6 +1,6 @@
 # Phase 9 — Interview reports (plan, for approval)
 
-Status: **APPROVED 2026-10-03 with the suggested options (on demand, in-API purge sweep, print-to-PDF + text). Built and committed; migration `0027_reports` awaits the owner's go-ahead; owner-run `report_eval_live.py` ready.**
+Status: **APPROVED 2026-10-03 with the suggested options (on demand, in-API purge sweep, print-to-PDF + text). BUILT and committed; migration `0027_reports` was APPLIED live on 2026-10-03. Not yet run against live data (0 `interview_reports` rows); owner-run `scripts/report_eval_live.py` (4 requests) is ready and has not been run. Final audit findings: BE-M10 (the overall score ignores a bad code verdict when the model returns `null` for `coding_quality`), FE L-27/L-28 ("Get my report" in the room goes to the list; the "completed interviews without a report" list covers only the first 50 interviews), FE M-11 (printing from dark theme prints dark panels).**
 Constraints: free tier only; as few LLM calls as possible (one per report); everything stays in Supabase (no new service).
 
 ## 1. What the candidate gets
@@ -66,7 +66,7 @@ The transcript is the candidate's own text, so it is untrusted: wrapped in rando
 - A free-tier model may be generous or harsh; the owner-run eval measures this before you rely on the numbers.
 - Reports are stored in the database as JSON for seven days, so there is no file to leak and nothing in object storage.
 
-## 5. Needed from the owner
+## 5. Needed from the owner (all decided: on demand, in-API sweep, print-to-PDF + text, 0027 applied)
 1. Approval of this plan.
 2. **When is a report made?** On demand with a button (suggested: spends no quota unless wanted) or automatically when an interview completes.
 3. **Purge:** in-API sweep (suggested) or add `pg_cron`?

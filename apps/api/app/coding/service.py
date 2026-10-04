@@ -89,7 +89,15 @@ def _problem_phase(interview: dict) -> tuple[str, int, str]:
             "not_a_coding_phase",
             "There is no coding problem to submit for right now.",
         )
-    index = min(question_index_for(phase), len(ids) - 1)
+    index = question_index_for(phase)
+    if index >= len(ids):
+        # The bank had fewer questions than this round needs: there is no
+        # second problem (it must not silently repeat the first).
+        raise AppError(
+            status.HTTP_409_CONFLICT,
+            "not_a_coding_phase",
+            "There is no coding problem to submit for right now.",
+        )
     return phase, index, ids[index]
 
 
@@ -212,6 +220,14 @@ async def begin_review(
             "code_too_long",
             f"That solution is too long to review (max {MAX_CODE_CHARS} characters).",
         )
+
+    # A review that died without a trace (its job's heartbeat stopped) would keep
+    # the single-submit claim forever: free it first.
+    stuck = await jobs_repo.active_job(user_id, REVIEW_JOB)
+    if stuck is not None and job_runner.is_stale(stuck):
+        await job_runner.fail_stale(stuck, "The previous review stopped responding -- please try again.")
+        if stuck.get("subject_id"):
+            await submissions_repo.mark_failed(stuck["subject_id"])
 
     submission = await submissions_repo.create_submission(
         interview_id, user_id, question_id, language, code

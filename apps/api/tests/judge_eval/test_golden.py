@@ -63,3 +63,26 @@ def test_a_reviewer_answer_parses_with_the_real_schema():
         "trace": "For 'abba' it returns 2 at line 6 because start is moved only forward.",
         "approach": "same_as_reference", "result": "correct", "interviewer_message": "Thanks. What is the complexity?",
     })
+
+
+def test_the_starter_bank_has_enough_questions_for_every_coding_interview_type():
+    from app.interviews.types import get_config
+
+    by_type: dict[str, int] = {}
+    for p in PROBLEMS.values():
+        by_type[p["type"]] = by_type.get(p["type"], 0) + 1
+    for interview_type in ("coding", "webd", "sde"):
+        assert by_type.get(interview_type, 0) >= get_config(interview_type).question_count, interview_type
+
+
+def test_the_new_python_reference_solutions_work():
+    valid = _function(PROBLEMS["valid_parentheses"]["solution_code"], "is_valid")
+    assert [valid(s) for s in ("([]{})", "(]", "([)]", "", "(", "a")] == [True, False, False, True, False, False]
+    ns: dict = {}
+    exec(PROBLEMS["lru_cache"]["solution_code"], ns)  # noqa: S102 - our own fixed test data
+    cache = ns["LRUCache"](2)
+    cache.put(1, 1)
+    cache.put(2, 2)
+    assert cache.get(1) == 1
+    cache.put(3, 3)  # evicts key 2
+    assert cache.get(2) == -1 and cache.get(3) == 3 and cache.get(1) == 1

@@ -97,25 +97,3 @@ async def append_exchange(
         ).execute()
 
     await run(_q)
-
-
-async def append_message(
-    conversation_id: str, role: str, content: str, provider: str | None = None
-) -> dict:
-    supabase = get_supabase()
-
-    def _q():
-        return (
-            supabase.table("chat_messages")
-            .insert(
-                {
-                    "conversation_id": conversation_id,
-                    "role": role,
-                    "provider": provider,
-                    "content": content,
-                }
-            )
-            .execute()
-        )
-
-    return (await run(_q)).data[0]

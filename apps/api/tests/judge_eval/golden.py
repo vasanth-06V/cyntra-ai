@@ -83,6 +83,109 @@ PROBLEMS = {
     },
 }
 
+# More starter problems so that every coding interview type has enough to ask
+# (coding needs 2, web dev 2, SDE 1). They are not used by the judge-accuracy cases.
+PROBLEMS["valid_parentheses"] = {
+    "type": "coding",
+    "topic": "stacks",
+    "difficulty": 2,
+    "tags": ["stack", "strings"],
+    "question": (
+        "Given a string containing only the characters ()[]{}, decide whether it is valid: every "
+        "opening bracket is closed by the same kind of bracket, in the correct order. "
+        "\"([]{})\" -> true, \"(]\" -> false, \"([)]\" -> false, \"\" -> true. Aim for linear time."
+    ),
+    "solution_language": "Python",
+    "solution_code": '''def is_valid(s):
+    pairs = {")": "(", "]": "[", "}": "{"}
+    stack = []
+    for ch in s:
+        if ch in pairs.values():
+            stack.append(ch)
+        elif ch in pairs:
+            if not stack or stack.pop() != pairs[ch]:
+                return False
+        else:
+            return False
+    return not stack
+''',
+}
+
+PROBLEMS["throttle"] = {
+    "type": "webd",
+    "topic": "javascript",
+    "difficulty": 3,
+    "tags": ["javascript", "closures", "timers", "events"],
+    "question": (
+        "Implement throttle(fn, wait) in JavaScript. It returns a function that calls fn at most "
+        "once every `wait` milliseconds: the first call runs immediately; calls made during the "
+        "wait are not lost -- the LAST one runs when the wait is over, with its own arguments. "
+        "Explain where you would use throttle instead of debounce in a web page."
+    ),
+    "solution_language": "JavaScript",
+    "solution_code": '''function throttle(fn, wait) {
+  let last = 0;
+  let timer = null;
+  let pendingArgs = null;
+  return function (...args) {
+    const now = Date.now();
+    const remaining = wait - (now - last);
+    if (remaining <= 0) {
+      clearTimeout(timer);
+      timer = null;
+      last = now;
+      fn.apply(this, args);
+    } else {
+      pendingArgs = args;
+      if (!timer) {
+        timer = setTimeout(() => {
+          last = Date.now();
+          timer = null;
+          fn.apply(this, pendingArgs);
+          pendingArgs = null;
+        }, remaining);
+      }
+    }
+  };
+}
+''',
+}
+
+PROBLEMS["lru_cache"] = {
+    "type": "sde",
+    "topic": "data structures",
+    "difficulty": 3,
+    "tags": ["hash map", "linked list", "design"],
+    "question": (
+        "Design and implement an LRU (least recently used) cache with get(key) and put(key, value), "
+        "both in O(1) average time, with a fixed capacity: when it is full, putting a new key "
+        "evicts the least recently used one. get returns -1 for a missing key. Discuss how you "
+        "would make it safe for concurrent use."
+    ),
+    "solution_language": "Python",
+    "solution_code": '''from collections import OrderedDict
+
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.items = OrderedDict()
+
+    def get(self, key):
+        if key not in self.items:
+            return -1
+        self.items.move_to_end(key)
+        return self.items[key]
+
+    def put(self, key, value):
+        if key in self.items:
+            self.items.move_to_end(key)
+        self.items[key] = value
+        if len(self.items) > self.capacity:
+            self.items.popitem(last=False)
+''',
+}
+
 # expected: "correct" -> the reviewer should answer correct / mostly_correct;
 #           "wrong"   -> it should answer incorrect / incomplete.
 # run: for Python cases, the function name and (args, expected) pairs used by

@@ -39,12 +39,14 @@ class RequirementsOut(BaseModel):
     @field_validator("experience_level", mode="before")
     @classmethod
     def _level(cls, value):
-        return str(value).strip() if value else "unspecified"
+        # Derived from an untrusted job posting and re-used in prompts: no tags,
+        # no control characters, bounded length.
+        return neutralize_tags(strip_controls(str(value))).strip()[:40] if value else "unspecified"
 
     @field_validator("title", mode="before")
     @classmethod
     def _title(cls, value):
-        return str(value).strip() if value else ""
+        return neutralize_tags(strip_controls(str(value))).strip()[:100] if value else ""
 
 
 class SetupOut(BaseModel):

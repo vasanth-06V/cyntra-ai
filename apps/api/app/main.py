@@ -10,8 +10,6 @@ from app.ats.router import router as ats_router
 from app.chat.router import router as chat_router
 from app.coding.router import router as coding_router
 from app.core import background
-from app.core import jobs as job_runner
-from app.db import interviews as interviews_repo
 from app.db import readiness
 from app.core.config import settings, validate_config
 from app.core.errors import install_error_handlers
@@ -19,9 +17,7 @@ from app.core.jsonlog import setup_logging
 from app.core.middleware import RequestContextMiddleware
 from app.core.security import AuthenticatedUser, get_current_user
 from app.interviews.router import router as interviews_router
-from app.coding.service import REVIEW_JOB
-from app.db import submissions as submissions_repo
-from app.interviews.service import SETUP_JOB
+from app.jobs import recovery as job_recovery
 from app.jobs.router import router as jobs_router
 from app.keys.router import router as keys_router
 from app.llm.router import router as usage_router
@@ -35,18 +31,9 @@ setup_logging()
 
 
 async def _recover_jobs() -> None:
-    """Jobs run inside this process, so any still marked active at boot were
-    orphaned by a restart: fail them and abort their half-made interviews. A
-    database hiccup here must not stop the API from starting."""
-    try:
-        for job in await job_runner.recover_interrupted():
-            if job.get("kind") == SETUP_JOB and job.get("subject_id"):
-                await interviews_repo.update_interview(job["subject_id"], {"status": "aborted"})
-            elif job.get("kind") == REVIEW_JOB and job.get("subject_id"):
-                # An interrupted review must not use up the candidate's single submit.
-                await submissions_repo.mark_failed(job["subject_id"])
-    except Exception:
-        logging.getLogger(__name__).warning("Could not recover interrupted jobs", exc_info=True)
+    """At boot: fail the jobs whose process is gone (stale heartbeat) and tidy
+    what they were about. Live jobs of another instance are left alone."""
+    await job_recovery.fail_stale_jobs()
 
 
 @asynccontextmanager
@@ -55,11 +42,15 @@ async def lifespan(_: FastAPI):
     validate_config()
     await _recover_jobs()
     # Expired reports are refused at read time regardless; this also deletes them.
-    sweeper = asyncio.create_task(reports_service.sweep_forever(), name="report-sweep")
+    sweepers = [
+        asyncio.create_task(reports_service.sweep_forever(), name="report-sweep"),
+        asyncio.create_task(job_recovery.sweep_forever(), name="job-sweep"),
+    ]
     try:
         yield
     finally:
-        sweeper.cancel()
+        for task in sweepers:
+            task.cancel()
     # Let in-flight housekeeping (summaries, digests) finish rather than drop it.
     try:
         await asyncio.wait_for(background.drain(), timeout=8)

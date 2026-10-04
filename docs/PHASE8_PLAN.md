@@ -1,6 +1,6 @@
 # Phase 8 — Voice (plan, for approval)
 
-Status: **APPROVED 2026-10-03. Built and committed (frontend only, no migration); awaiting the owner's hands-on test in Chrome/Edge.**
+Status: **APPROVED 2026-10-03. BUILT and committed (frontend only, no migration, no backend change; `apps/api/app/interviews/voice/` is an empty leftover package). Awaiting the owner's hands-on test in Chrome/Edge: nothing in this document has been verified with a real microphone. The final frontend audit (2026-10-04) found four bugs in the voice layer (turning voice on mid-interview does not read the pending question; the closing message can be cut off when time runs out; a `speak()` race can let the microphone hear the interviewer; a microphone error latches until reload; see `docs/audit/FRONTEND_AUDIT.md` M-3 to M-6) and that nudges ignore typing (L-31). Browser behaviour (Chrome/Edge good, Safari partial, Firefox none) comes from documentation and is unverified.**
 Constraints: free tier only; the interview conversation is the product; the text pipeline (turns, jobs, atomic writes, coding round) already works and must not be rewritten.
 
 ## 1. The decision: voice as an I/O layer, in the browser
@@ -53,7 +53,7 @@ Everything the product already guarantees (transcript in the database, atomic tu
 - Chrome's recognizer needs internet and sends audio to Google; this is shown to the user before first use.
 - Mobile Safari support is partial; it falls back to typing.
 
-## 5. Needed from the owner
+## 5. Needed from the owner (status 2026-10-04: the approach and defaults were decided and built; the hands-on test is open)
 1. Approval of this approach (browser voice now, premium voice later if wanted).
 2. Which browsers you will use to test (Chrome/Edge assumed).
 3. Whether replies should be **spoken by default** when voice is supported, or only after the candidate turns voice mode on (suggested: the candidate turns it on once, remembered afterwards).

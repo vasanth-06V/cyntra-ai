@@ -6,11 +6,11 @@ from app.keys.models import ProviderName
 
 
 class CreateConversationRequest(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=120)
 
 
 class RenameConversationRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=120, pattern=r"\S")  # not whitespace-only
 
 
 class ConversationOut(BaseModel):

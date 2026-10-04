@@ -1,5 +1,22 @@
 # CyntraAI — End-to-End Implementation Plan (Detailed)
 
+> **HISTORICAL. Superseded by `docs/PRODUCT.md` (2026-10-04).** This is the original plan written on 2026-09-27, before any code. All ten phases are now built, but several decisions below were changed or reversed. Where this file disagrees with `PRODUCT.md`, `PRODUCT.md` and the code win. Inline `[CHANGED]` notes mark the main differences; the body is otherwise left as originally written.
+>
+> | Original plan | What actually happened |
+> |---|---|
+> | Python 3.11 | Python 3.13 in the dev venv and CI (code needs >= 3.11) |
+> | File storage: Cloudflare R2 | **Supabase Storage** (S3 API), private bucket `resumes`, 500 KB cap, 3 resumes per user (switched 2026-10-03) |
+> | Code execution: Judge0 (Phase 7) | **Withdrawn.** No code is executed; one LLM review per problem against a reference solution (`question_bank.solution_code`); `test_cases` unused |
+> | Voice: WebSocket handler, STT/TTS/VAD on the server (Phase 8) | **Browser speech recognition and synthesis** in `apps/web/lib/voice`; no backend voice code (`apps/api/app/interviews/voice/` is an empty leftover package) |
+> | Reports: `apscheduler` daily job, PDF download (Phase 9) | On-demand report job, in-API purge sweep (startup, on list, every 6 h), read-time expiry, print-to-PDF and text export; no `apscheduler`, no `pg_cron` |
+> | `google-generativeai` SDK, `websockets`, `apscheduler`, `zustand`, `zod` | Gemini over REST/httpx (no SDK); `websockets` and `apscheduler` are not in `requirements.txt`; `zustand` and `zod` are declared in `package.json` but not imported |
+> | "ATS checks are not persisted" | **Reversed:** last 10 checks per resume stored in `ats_scores` (migration 0028) |
+> | Team page "stub" (later phases) | Built (`/settings/team`, `/team/*` API) |
+> | `interview_reports` with owner-scoped RLS (section 5) | Backend only (client privileges revoked in 0027); expiry enforced in code |
+> | Tables: those in section 5 | 17 tables, i.e. also plus `jobs`, `code_submissions`, `ats_scores`; migrations 0001-0029 |
+> | Phase 10 Playwright smoke test, Dockerfile, deploy | Not built yet; see `docs/DEPLOY.md` and `docs/LAUNCH_CHECKLIST.md` |
+> | "Testing from Phase 1 with a first Playwright smoke test" | No Playwright test exists; testing is pytest (605 + 1 skipped) and vitest (158) |
+
 ## 1. Context
 
 CyntraAI is a from-scratch AI platform offering three services — an AI Chatbot, an AI Interviewing Agent, and an AI Resume ATS Score checker — unified under a **BYOK (Bring Your Own Key)** model, so the platform never bears LLM usage costs. This document is the single source of truth for architecture, folder structure, data model, and a granular step-by-step build order. **No implementation begins until this plan is explicitly approved.**
@@ -14,9 +31,9 @@ CyntraAI is a from-scratch AI platform offering three services — an AI Chatbot
 | Backend — light CRUD | Next.js Route Handlers / Server Actions | auth-adjacent, settings, roles, metadata |
 | Backend — AI engine | Python 3.11 + FastAPI | hosted on Render (free tier) |
 | Database / Auth | Supabase Postgres + pgvector + Auth | free tier |
-| File storage | Cloudflare R2 (S3-compatible) | free — 10GB, zero egress, resumes & reports |
+| File storage | Cloudflare R2 (S3-compatible) | free — 10GB, zero egress, resumes & reports. **[CHANGED: Supabase Storage via its S3 API, 1 GB free, resumes only; reports live in the database]** |
 | Cache | None (deferred) | Postgres/in-memory used where needed |
-| Code execution | Judge0 (hosted free API via RapidAPI) | sandboxed test-case execution |
+| Code execution | Judge0 (hosted free API via RapidAPI) | sandboxed test-case execution. **[CHANGED: withdrawn; nothing is executed, see PRODUCT.md]** |
 | Repo | Single monorepo | `apps/web` + `apps/api` |
 
 Key libraries (indicative, confirmed at Phase 1 kickoff):
@@ -280,7 +297,7 @@ create table interview_reports (
 - `question_bank` — readable by all authenticated users, writable only by Owner or Admins with the `manage_question_bank` permission.
 - `roles` / `admin_permissions` — writable only by Owner.
 
-**ATS checks are not persisted** — no table; scoring is request/response only.
+**ATS checks are not persisted** — no table; scoring is request/response only. **[CHANGED 2026-10-04: the last 10 checks per resume are stored in `ats_scores`, migration 0028.]**
 
 ---
 
@@ -459,6 +476,7 @@ Errors surface as `AppError` with stable codes: 412 `key_missing`, 429 `quota_ex
 8. **Definition of done**: a full 1-hour (or accelerated-for-testing) mock interview can be run start to finish in text mode, phases advance correctly with the timer, questions are visibly personalized to the resume/JD, and a simulated rate-limit mid-interview fails over without breaking the session.
 
 ### Phase 7 — Interviewing Agent: Coding Platform
+**[CHANGED: Judge0 and code execution were withdrawn; see `docs/PHASE7_PLAN.md` rev 2. The steps below are the original plan.]**
 **Goal**: coding-type interviews get a live code editor with test-case execution.
 
 1. `coding/judge0_client.py` — thin async client for the hosted Judge0 API (submit code + language + stdin, poll for result, map to pass/fail against each test case).
@@ -468,6 +486,7 @@ Errors surface as `AppError` with stable codes: 412 `key_missing`, 429 `quota_ex
 5. **Definition of done**: during a coding-type interview, the user can write code, run it against visible test cases, and see pass/fail feedback, with the AI able to reference the submission in its follow-up questions.
 
 ### Phase 8 — Interviewing Agent: Voice Layer
+**[CHANGED: built as browser speech APIs, no WebSocket backend; see `docs/PHASE8_PLAN.md`. The steps below are the original plan.]**
 **Goal**: the full voice-driven experience — the hardest, most important part of the product — built last since it depends on stable orchestration underneath.
 
 1. `interviews/voice/ws_handler.py` — a FastAPI WebSocket endpoint per interview session; browser streams audio chunks up, server streams TTS audio + partial transcripts down.
@@ -479,6 +498,7 @@ Errors surface as `AppError` with stable codes: 412 `key_missing`, 429 `quota_ex
 7. **Definition of done**: a full mock interview can be conducted entirely by voice — AI speaks, user responds by talking, transcript renders live, silence/interruption edge cases behave sensibly, and a brief network drop recovers without losing interview progress.
 
 ### Phase 9 — Reports
+**[CHANGED: on-demand job, in-API sweep, print-to-PDF; see `docs/PHASE9_PLAN.md`. The steps below are the original plan.]**
 **Goal**: post-interview report generation, time-boxed availability, and cleanup.
 
 1. On `interviews/{id}/complete`, generate report content (LLM call summarizing performance from `interview_transcripts` + phase outcomes + coding submission results if applicable) → store in `interview_reports` with `expires_at = now() + 7 days`.
@@ -512,4 +532,4 @@ Errors surface as `AppError` with stable codes: 412 `key_missing`, 429 `quota_ex
 
 ## 11. Status
 
-**Planning complete. Awaiting explicit approval before any code is written.**
+**Historical.** Planning was completed and approved on 2026-09-27; all ten phases have since been built (with the changes listed in the banner at the top). For the current state see `docs/PRODUCT.md` and the STATE SNAPSHOT at the top of `docs/PROJECT_DOCUMENTARY.md`.

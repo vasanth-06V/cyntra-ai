@@ -25,7 +25,12 @@ from app.db import jobs as jobs_repo
 logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT = 6  # the work is I/O-bound on each user's own provider key
-STALE_AFTER_SECONDS = 420  # no sign of life for this long = nobody is running it
+# A running job proves it is alive with a heartbeat every HEARTBEAT_SECONDS, so
+# a few missed beats mean its process is gone (crash, restart, lost write). A
+# job still waiting for a slot has no heartbeat and is judged by its age.
+HEARTBEAT_SECONDS = 20
+STALE_RUNNING_SECONDS = 90
+STALE_QUEUED_SECONDS = 420
 
 Reporter = Callable[[str], Awaitable[None]]
 Work = Callable[[Reporter], Awaitable[dict]]
@@ -48,13 +53,21 @@ def reset() -> None:
 
 
 def is_stale(job: dict, now: datetime | None = None) -> bool:
-    seen = job.get("heartbeat_at") or job.get("created_at")
+    running = job.get("status") == "running"
+    seen = (job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")) if running else job.get("created_at")
     if not seen:
         return True
     when = datetime.fromisoformat(str(seen).replace("Z", "+00:00"))
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    return ((now or datetime.now(UTC)) - when).total_seconds() > STALE_AFTER_SECONDS
+    limit = STALE_RUNNING_SECONDS if running else STALE_QUEUED_SECONDS
+    return ((now or datetime.now(UTC)) - when).total_seconds() > limit
+
+
+async def _heartbeat(job_id: str) -> None:
+    while True:
+        await asyncio.sleep(HEARTBEAT_SECONDS)
+        await _safe(jobs_repo.touch, job_id)
 
 
 async def _safe(coro_fn, *args) -> None:
@@ -79,6 +92,7 @@ async def _run(job_id: str, work: Work, on_failure: OnFailure | None) -> None:
         async def report(text: str) -> None:
             await _safe(jobs_repo.mark_progress, job_id, text)
 
+        beat = asyncio.get_running_loop().create_task(_heartbeat(job_id), name=f"heartbeat:{job_id}")
         try:
             result = await work(report)
         except HTTPException as exc:
@@ -91,8 +105,11 @@ async def _run(job_id: str, work: Work, on_failure: OnFailure | None) -> None:
                 "status": 500,
             }
         else:
+            beat.cancel()
             await _safe(jobs_repo.mark_succeeded, job_id, result)
             return
+        finally:
+            beat.cancel()
 
         await _safe(jobs_repo.mark_failed, job_id, error)
         if on_failure is not None:
@@ -135,15 +152,4 @@ async def launch(
 async def fail_stale(job: dict, message: str) -> None:
     await jobs_repo.mark_failed(
         job["id"], {"code": "interrupted", "message": message, "status": 503}
-    )
-
-
-async def recover_interrupted() -> list[dict]:
-    """Called once at startup."""
-    return await jobs_repo.fail_all_active(
-        {
-            "code": "interrupted",
-            "message": "The server restarted while this was running -- please try again.",
-            "status": 503,
-        }
     )

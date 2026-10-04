@@ -34,11 +34,13 @@ class _Outcome:
         return self._body
 
 
-async def _start(client, env, user=USER_A, type_="coding", provider="gemini", jd="Senior Python role"):
+async def _start(client, env, user=USER_A, type_="coding", provider="gemini", jd="Senior Python role", seed_bank=True):
     """Starts an interview and waits for its setup job. Returns the interview
     (status 200) when the job succeeded, the job's error when it failed, or the
     immediate refusal (404/412/422) when the request was rejected up front."""
     resume = seed_processed_resume(env, user)
+    if seed_bank and type_ in ("coding", "webd", "sde") and not env.db.rows("question_bank", type=type_):
+        _seed_questions(env, 2, type_)  # a coding round needs questions to ask
     r = await client.post(
         "/interviews",
         json={"type": type_, "provider": provider, "resume_id": resume["id"], "jd_text": jd},
@@ -163,12 +165,12 @@ async def test_setup_never_shows_raw_json_even_when_the_repair_fails_too(client,
     assert not text.lstrip().startswith("{") and "Hello there" in text  # salvaged from the first attempt
 
 
-async def test_coding_interview_with_empty_question_bank_starts_with_no_questions(client, keyed):
-    """Characterisation of a plan gap: nothing warns or refuses when the bank
-    has no questions for the type; the coding interview just has none."""
-    r, _ = await _start(client, keyed)
-    assert r.status_code == 200
-    assert keyed.db.rows("interviews", id=r.json()["id"])[0]["selected_question_ids"] == []
+async def test_a_coding_interview_with_no_questions_in_the_bank_is_refused_clearly(client, keyed):
+    r, _ = await _start(client, keyed, seed_bank=False)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "no_questions"
+    assert "Question Bank" in r.json()["error"]["message"]
+    assert [i["status"] for i in keyed.db.rows("interviews", user_id=USER_A)] == ["aborted"]  # not left half-made
+    assert keyed.db.rows("jobs", user_id=USER_A)[0]["status"] == "failed"  # and the slot is free to retry
 
 
 # ------------------------------- turns -------------------------------

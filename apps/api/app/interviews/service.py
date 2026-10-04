@@ -199,6 +199,18 @@ async def _run_setup(
         selected_question_ids = await _select_questions(
             user_id, interview_type, query_vector, config.question_count
         )
+        if not selected_question_ids:
+            raise AppError(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "no_questions",
+                "The question bank has no questions for this interview type yet. "
+                "Ask the team owner to add some (Question Bank page).",
+            )
+        if len(selected_question_ids) < config.question_count:
+            logger.warning(
+                "Question bank is thin: %s interview got %d of %d questions",
+                interview_type, len(selected_question_ids), config.question_count,
+            )
 
     if not resume_context:
         rows = await match_resume_chunks_multi(resume_id, [query_vector], [""], per_query=3)
@@ -366,13 +378,13 @@ async def _submit_turn(user_id: str, interview_id: str, content: str) -> dict:
     # (which would reveal it early) or the wrap-up.
     in_problem = bool(
         config.needs_coding_platform
-        and question_ids
         and (current_phase.startswith("problem_") or current_phase == "coding")
+        and question_index_for(current_phase) < len(question_ids)
     )
     # The reads below do not depend on each other: one round of waiting, not three.
     reads = [_recent_turns(interview_id, MAX_RAW_TURNS_IN_CONTEXT - 1)]
     if in_problem:
-        index = min(question_index_for(current_phase), len(question_ids) - 1)
+        index = question_index_for(current_phase)
         reads += [_get_question_text(question_ids[index]), _get_review_summary(interview_id, question_ids[index])]
     results = await asyncio.gather(*reads)
     recent = results[0]

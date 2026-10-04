@@ -35,7 +35,9 @@ NOTICE = (
 
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f​-‏ -‮⁠-⁤﻿]")
 # Anything that could be read as one of our delimiters or a chat-role marker.
-_TAGLIKE = re.compile(r"</?\s*(?:data|system|assistant|user|instructions?)\b[^>]*>?", re.IGNORECASE)
+# Only the exact tag names (followed by whitespace, "/", ">" or the end), so
+# `<user-card>` or `<data-table>` in a candidate's HTML/JSX stays intact.
+_TAGLIKE = re.compile(r"</?\s*(?:data|system|assistant|user|instructions?)(?=[\s/>]|$)[^>]*>?", re.IGNORECASE)
 _ROLE_LINE = re.compile(r"^\s*(?:system|assistant|interviewer|ai)\s*:\s*", re.IGNORECASE)
 
 

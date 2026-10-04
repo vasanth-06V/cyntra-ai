@@ -100,29 +100,44 @@ async def mark_progress(job_id: str, text: str) -> None:
     await update_job(job_id, {"progress": text, "heartbeat_at": _now()})
 
 
+async def _update_active(job_id: str, fields: dict) -> None:
+    """Updates a job only while it is still queued/running: a job already failed
+    (cancelled, judged stale) can never be flipped back to another state by a
+    task that was slow to notice."""
+    supabase = get_supabase()
+
+    def _q():
+        return supabase.table("jobs").update(fields).eq("id", job_id).in_("status", ACTIVE).execute()
+
+    await run(_q)
+
+
+async def touch(job_id: str) -> None:
+    """Liveness signal: the process running this job is alive."""
+    await _update_active(job_id, {"heartbeat_at": _now()})
+
+
 async def mark_succeeded(job_id: str, result: dict) -> None:
-    await update_job(
+    await _update_active(
         job_id, {"status": "succeeded", "result": result, "progress": None, "finished_at": _now()}
     )
 
 
 async def mark_failed(job_id: str, error: dict) -> None:
-    await update_job(
+    await _update_active(
         job_id, {"status": "failed", "error": error, "progress": None, "finished_at": _now()}
     )
 
 
-async def fail_all_active(error: dict) -> list[dict]:
-    """Startup recovery: jobs are run by this process, so any job still marked
-    active when it boots belongs to a process that died. Marks them failed and
-    returns them (so their subjects can be tidied up)."""
+async def list_active() -> list[dict]:
     supabase = get_supabase()
 
     def _q():
         return (
             supabase.table("jobs")
-            .update({"status": "failed", "error": error, "progress": None, "finished_at": _now()})
+            .select("id, kind, status, subject_id, created_at, started_at, heartbeat_at")
             .in_("status", ACTIVE)
+            .limit(500)
             .execute()
         )
 

@@ -84,6 +84,7 @@ async def mark_done(submission_id: str, verdict: dict, summary: str) -> None:
             supabase.table("code_submissions")
             .update({"status": "done", "verdict": verdict, "summary": summary})
             .eq("id", submission_id)
+            .eq("status", "review")
             .execute()
         )
 

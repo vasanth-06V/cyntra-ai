@@ -59,5 +59,8 @@ async def extract_requirements(user_id: str, provider: str, jd_text: str) -> dic
             detail="The model returned an unreadable analysis of the job description -- please try again.",
         ) from exc
     result = parsed.model_dump()
-    _cache.set(key, result)
+    # An empty analysis is almost always a flaky model reply: do not make the
+    # user wait out the cache hour for a second, usually better, attempt.
+    if result["must_have"] or result["nice_to_have"]:
+        _cache.set(key, result)
     return result

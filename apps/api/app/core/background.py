@@ -4,7 +4,7 @@
 Tasks run on the event loop, so they die with the process. That is fine for
 work that is derived and re-derivable: nothing is marked done until it
 succeeded, so the next request simply tries again. Anything that must survive
-a restart belongs in the planned jobs table, not here.
+a restart belongs in the jobs table (core/jobs.py), not here.
 """
 
 import asyncio

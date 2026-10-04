@@ -1,11 +1,43 @@
 # CyntraAI — the three pillars: audit and plan
 
-Status: **APPROVED 2026-10-02 (rev 2). M0-M3 done; M4 done (migrations 0021, 0022, 0025 applied); Phase 7 (coding platform) is next, after the execution-backend decision.**
+Status: **APPROVED 2026-10-02 (rev 2). COMPLETED as of 2026-10-04: M0-M4 are done (migrations 0019-0025 applied); Phases 7, 8 and 9 were built as redesigned (no code execution, browser voice, in-API report purge); Phase 10 is partly done (deployment files not yet written). This file is now largely historical: the text below is the plan as approved on 2026-10-02 and the "Outcome" and "Deferred / not delivered" sections that follow this line record what actually happened. Where they disagree with the body, they win; the current product is described in `docs/PRODUCT.md`.**
 Sources: three independent read-only audits (RAG, LLM, backend) run on 2026-10-02 against commit `4f81442`, each rated against best practice with file/line evidence. Claims below were verified in code/DB unless marked *(to verify)*. No live provider calls were made.
+
+
+## Outcome (added 2026-10-04): what was delivered, changed or dropped
+
+References in the body below to Cloudflare R2, presigned R2 upload, Judge0, `google-genai`, `pg_cron`, Gemini Live and the pre-M0 state ("0019 unapplied", "276 tests") are historical; storage is Supabase Storage and nothing is executed.
+
+| Item | Result |
+|---|---|
+| M0 safety net (0019 applied, startup validation, CORS/docs from env, CI workflow, Claude IDs fixed, `docs/FACTS.md`) | Done. The "lower upload limit to 4 MB" item became a 500 KB cap on 2026-10-03 |
+| M1 platform core (error envelope, request ids, JSON logs, db layer + architecture test, waking-server UI, throttles, pagination) | Done |
+| M2 LLM hardening | Done **except** the items under "Deferred / not delivered" below |
+| M3 RAG v2 (eval harness, chunker v2, multi-term RPC, calibrated ATS, selection, lockdown, re-embed script) | Done (migration 0020). The live calibration run (`scripts/rag_eval_live.py`) has not been done; ATS `LOW`/`HIGH` are placeholders |
+| M4 jobs + atomic RPCs (0021, 0022, 0025) | Done |
+| M4 presigned direct upload (D8) | **Dropped 2026-10-03** (500 KB cap, Supabase Storage) |
+| M4 async Supabase client | **Deferred 2026-10-03** |
+| D6 migrate to `google-genai` | **Obsolete**: the Gemini adapter uses REST over httpx; no Google SDK is a dependency |
+| D9 `pg_cron` expiry sweep, presigned report download | **Not built**: an in-API sweep (startup, on list, every 6 h) plus read-time refusal; downloads are print-to-PDF and text export |
+| D10 Gemini Live prototype and `VoiceSession` | **Replaced** by browser speech recognition/synthesis (no WebSocket, no ticket auth) |
+| D11 `ExecutionBackend` / Judge0, `test_results`, hidden test cases | **Withdrawn 2026-10-03**: nothing is executed; one LLM review per problem against a reference solution |
+| Phase 7 / 8 / 9 | Built as redesigned (migrations 0026, none, 0027); see `PHASE7_PLAN.md` to `PHASE9_PLAN.md` |
+| Phase 10 | Cleanup, `/ready`, `MultiFernet` rotation, OpenAPI snapshot test, polish, privacy page done. Not done: Dockerfile, `.dockerignore`, `render.yaml`, `scripts/check_deploy.py`, real-Postgres CI tests, Playwright smoke test, demo sign-up removal (deliberately kept until launch). Runbooks are `docs/DEPLOY.md` and `docs/LAUNCH_CHECKLIST.md` |
+
+### Deferred / not delivered (promised in this plan, never built, recorded honestly)
+- **Pinned model IDs (M2.8).** The plan said to replace `-latest` aliases in production and add a `last_verified` marker. Not done: `app/llm/models.py` still uses the alias `gemini-flash-lite-latest` (kept deliberately for latency and quota) and has only a docstring date, no `last_verified` field and no startup log of configured models. Pin once `llm_smoke --record` has been run against a specific model.
+- **`llm_usage.feature` and `llm_usage.model` columns (M2.9)**: not built. Migration 0023 (`llm_usage_v2`) added only `thought_tokens` and the Pacific-day handling. Per-feature cost visibility does not exist.
+- **Prompt-version stamping columns (M2.9)** on stored briefs/summaries: not built (prompt versions exist in code only).
+- **`chat_messages.status` (M2.4)** for persisting partial replies on disconnect: not built. Disconnect handling relies on cleanup in the streaming generator (audit BE-M8 notes it depends on garbage-collector finalisers).
+- **Recorded Gemini fixtures and adapter contract tests (M2.10)**: `tests/fixtures/gemini/` does not exist, so the one test that needs it (`test_recorded_fixtures`) is skipped. `scripts/llm_smoke.py --record` was written for the owner to run and has not been run.
+- **`test_results` table and `is_hidden` test cases**: never built (Judge0 withdrawn).
+- **Original migration batch names** below (`0023_llm_observability`, `0024_coding`, `0025_reports`) were not used; see the corrected table.
+- **Generated TypeScript types from OpenAPI**: not built (frontend types are hand-written; an OpenAPI snapshot test guards the API shape instead).
+- **HNSW index**: not built, by decision D3 (exact scan until about 10k questions).
 
 ---
 
-## 1. Verdict: are we following the three pillars?
+## 1. Verdict: are we following the three pillars? (as audited on 2026-10-02, before M0-M4)
 
 **Partly. The foundations are right; the production-grade layers are missing.**
 
@@ -33,12 +65,12 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 | D3 | No HNSW on `resume_chunks` (per-resume slice is tiny; exact scan is optimal). Question bank: exact scan until ~10k rows, then HNSW. | Filtered ANN loses recall on tiny slices. |
 | D4 | ATS semantic score becomes a **calibrated coverage** (threshold + hybrid keyword hit), one multi-term RPC; constants set from the eval harness, and the user runs one rate-safe live calibration. Until calibrated, semantic weight in the composite is reduced. | Current score compresses everything into ~0.55–0.75. |
 | D5 | Rate-limit buckets keyed by `(provider, key-hash)`, with priority lanes (interactive > background). **Usage `day` for Gemini is the Pacific-time day** (docs: RPD resets at midnight Pacific; limits are per *project*, so a backup key only helps if it is from a different project). | UTC "used today" currently disagrees with the real quota window. |
-| D6 | SDKs: set explicit timeouts and `max_retries=0` now; **migrate `google-generativeai` → `google-genai` before Phase 8** (needed for Live API, schema output, `thinking_level`). **Thinking control is mandatory in every adapter**: Gemini lite-class models think by default (docs: `gemini-3.5-flash-lite` = minimal-on; only 2.5-flash-lite is off), thought tokens are reported/billed separately and can eat `max_output_tokens`; Claude Sonnet 5.5 uses adaptive thinking. Interviewer turns/extraction run with minimal thinking and the 160/450/600-token caps are re-derived to include it. | Otherwise tight caps silently truncate or return empty text. |
+| D6 | **[OBSOLETE: Gemini is called over REST; no `google-genai` migration]** SDKs: set explicit timeouts and `max_retries=0` now; **migrate `google-generativeai` → `google-genai` before Phase 8** (needed for Live API, schema output, `thinking_level`). **Thinking control is mandatory in every adapter**: Gemini lite-class models think by default (docs: `gemini-3.5-flash-lite` = minimal-on; only 2.5-flash-lite is off), thought tokens are reported/billed separately and can eat `max_output_tokens`; Claude Sonnet 5.5 uses adaptive thinking. Interviewer turns/extraction run with minimal thinking and the 160/450/600-token caps are re-derived to include it. | Otherwise tight caps silently truncate or return empty text. |
 | D7 | Untrusted text (JD, resume, brief, summary, answers, code) is delimited and never placed in the system role; replies pass a cheap leak filter. Reports treat the transcript as quoted data and bound scores by schema and Judge0 results. | Second-order injection is real today and becomes an integrity issue in Phase 9. |
-| D8 | Resume upload moves to **presigned direct-to-R2 + one `POST /v1/resumes` (register + enqueue) + job polling**. | Verified: Vercel functions cap request/response bodies at **4.5 MB** (our limit is 5 MB, so 4.5–5 MB files already fail there) and add a double hop. *(Correction: Hobby `maxDuration` is 300 s, not 10 s — timeouts are not the reason; until D8 lands, lower the app limit to 4 MB.)* |
-| D9 | Report expiry: `expires_at` defaults in the DB, enforced at read time, swept by `pg_cron` (DB rows) plus an opportunistic job (R2 objects). | Works even if the free instance sleeps. |
-| D10 | Phase 8 voice: **decide Gemini Live vs STT+LLM+TTS with a small user-run prototype first**; both sit behind one `VoiceSession` interface. | Verified: Live audio sessions are **capped at 15 min** (extendable only via context-window compression + session resumption), native-audio context is 128k, input PCM 16 kHz / output 24 kHz, automatic VAD with tunable sensitivity. A 60-min interview therefore **requires session resumption** with our DB transcript as the durable state. Free-tier concurrency/session counts are unpublished *(prototype)*. Groq offers Whisper STT (production) for option (b); its TTS is *(to verify)*. |
-| D11 | **Code execution backend sits behind an `ExecutionBackend` interface** (Judge0 first). Decision needed before Phase 7 (see §6). | Verified: the free hosted Judge0 route is effectively unusable (anecdotally ~50 submissions/day on a shared RapidAPI key; official hosted plans start at ~€27/mo for 2,000/day; self-hosting is free but needs a privileged-Docker host — not Render free). |
+| D8 | **[DROPPED 2026-10-03; storage is now Supabase Storage with a 500 KB cap]** Resume upload moves to **presigned direct-to-R2 + one `POST /v1/resumes` (register + enqueue) + job polling**. | Verified: Vercel functions cap request/response bodies at **4.5 MB** (our limit is 5 MB, so 4.5–5 MB files already fail there) and add a double hop. *(Correction: Hobby `maxDuration` is 300 s, not 10 s — timeouts are not the reason; until D8 lands, lower the app limit to 4 MB.)* |
+| D9 | **[CHANGED: in-API sweep, no `pg_cron`]** Report expiry: `expires_at` defaults in the DB, enforced at read time, swept by `pg_cron` (DB rows) plus an opportunistic job (R2 objects). | Works even if the free instance sleeps. |
+| D10 | **[REPLACED by browser speech APIs]** Phase 8 voice: **decide Gemini Live vs STT+LLM+TTS with a small user-run prototype first**; both sit behind one `VoiceSession` interface. | Verified: Live audio sessions are **capped at 15 min** (extendable only via context-window compression + session resumption), native-audio context is 128k, input PCM 16 kHz / output 24 kHz, automatic VAD with tunable sensitivity. A 60-min interview therefore **requires session resumption** with our DB transcript as the durable state. Free-tier concurrency/session counts are unpublished *(prototype)*. Groq offers Whisper STT (production) for option (b); its TTS is *(to verify)*. |
+| D11 | **[WITHDRAWN 2026-10-03: no code execution]** **Code execution backend sits behind an `ExecutionBackend` interface** (Judge0 first). Decision needed before Phase 7 (see §6). | Verified: the free hosted Judge0 route is effectively unusable (anecdotally ~50 submissions/day on a shared RapidAPI key; official hosted plans start at ~€27/mo for 2,000/day; self-hosting is free but needs a privileged-Docker host — not Render free). |
 | D12 | **Cold-start tolerance is a product feature**: Render free spins down after **15 min idle**, cold start **≈1 min**, **750 instance-hours/month** (one always-on service ≈744 h fits; two do not), ephemeral disk, WebSockets supported and count as traffic. The frontend shows a "waking the server…" state with retry/backoff; long work is jobs (D1); an optional keep-warm pinger is affordable for one service. | Verified facts; makes the polled-job design mandatory rather than optional. |
 
 ---
@@ -116,9 +148,14 @@ Cross-cutting insight: the three pillars share four missing primitives. Build th
 | `0022_jobs` | `jobs` table, one active job per user+kind, RLS locked | M4.2 (applied) |
 | `0025_atomic_chat` | `append_chat_exchange` (both messages in one transaction, ordered timestamps) | M4.3 (applied) |
 | later (deferred by owner 2026-10-03) | resume rename (`resumes.name`), 3-resume limit trigger, `ats_history` (last 10) | backlog |
-| `0023_llm_observability` | `llm_usage.feature/model/thought_tokens`, Pacific-day column for Gemini, prompt-version columns | M2 |
-| `0024_coding` | `code_submissions`, `test_results` | Phase 7 |
-| `0025_reports` | tighten `interview_reports`, `expires_at` default/index, `pg_cron` sweep | Phase 9 |
+| `0023_llm_usage_v2` (applied before 0020) | `llm_usage` gains `thought_tokens`; `record_llm_usage` with `p_thought`, `p_day` (Pacific day). **`feature`/`model` columns and prompt-version columns were not added** | M2 |
+| `0024_drop_legacy_retrieval` (applied before 0021) | drops the old `match_resume_chunks` / `match_question_bank` | M3 |
+| `0026_coding` | `question_bank.solution_code/solution_language`; `code_submissions` (no `test_results`) | Phase 7 (applied 2026-10-03) |
+| `0027_reports` | tighten `interview_reports`, `expires_at` default, `overall_score`, `user_id`; backend only. **No `pg_cron`** | Phase 9 (applied 2026-10-03) |
+| `0028_pending_features` | resume `display_name`, column grants, `file_key` CHECK, 3-resume trigger, `ats_scores` + `record_ats_score` | applied 2026-10-04 |
+| `0029_revoke_resume_limit_fn` | revokes REST execute on the trigger function | applied 2026-10-04 |
+
+The "later (deferred by owner 2026-10-03)" row above (resume rename, 3-resume limit, ATS history) was delivered as 0028 on 2026-10-04 (the column is `resumes.display_name`, not `resumes.name`). Also applied live but without a file: `fix_remaining_rls_initplan` (folded into 0009).
 
 ## 5. Verification strategy (no live provider calls by the assistant)
 Unit + integration suites stay green at every step; strict-xfail tests flip as bugs are fixed; **recorded-fixture adapter tests**, **RAG eval harness**, **injection corpus**, an architecture test (no `.table(` outside `db/`), a handful of **real-Postgres tests** (RPC signatures, constraints, RLS — the in-memory fake cannot prove these), `tsc`/`eslint`/`next build`. The user runs the two opt-in live scripts (RAG calibration, LLM smoke) when ready.

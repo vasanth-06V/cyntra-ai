@@ -42,7 +42,9 @@ def test_the_coding_score_cannot_beat_the_stored_code_review():
     assert scoring.apply_caps(base, ["incorrect"])["coding_quality"] == 2
     assert scoring.apply_caps(base, ["correct", "incomplete"])["coding_quality"] == 2  # the strictest problem rules
     assert scoring.apply_caps(base, [])["coding_quality"] is None  # no code, nothing to score
-    assert scoring.apply_caps({"communication": 4}, ["correct"]).get("coding_quality") is None
+    # code was reviewed but the model gave no coding score: the review decides (never better than adequate)
+    assert scoring.apply_caps({"communication": 4}, ["correct"])["coding_quality"] == 3
+    assert scoring.apply_caps({"communication": 4}, ["incorrect"])["coding_quality"] == 2
 
 
 def test_bands():

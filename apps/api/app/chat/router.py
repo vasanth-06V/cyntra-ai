@@ -74,9 +74,15 @@ async def send_message(
         first_chunk = None
 
     async def body_stream():
-        if first_chunk is not None:
-            yield first_chunk
-        async for chunk in replies:
-            yield chunk
+        try:
+            if first_chunk is not None:
+                yield first_chunk
+            async for chunk in replies:
+                yield chunk
+        finally:
+            # On a client disconnect Starlette closes THIS generator; close the
+            # inner one explicitly so the partial reply is saved and the
+            # per-conversation guard is released now, not whenever GC runs.
+            await replies.aclose()
 
     return StreamingResponse(body_stream(), media_type="text/plain")

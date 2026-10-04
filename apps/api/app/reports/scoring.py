@@ -47,6 +47,10 @@ def apply_caps(dimensions: dict[str, int | None], code_results: list[str]) -> di
         out["coding_quality"] = None  # nothing was submitted: there is nothing to score
     elif out.get("coding_quality") is not None:
         out["coding_quality"] = min(out["coding_quality"], cap)
+    else:
+        # The model gave no coding score although code was reviewed: use the
+        # review itself (never better than "adequate" without the model's say-so).
+        out["coding_quality"] = min(cap, 3)
     return out
 
 

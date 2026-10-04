@@ -1,15 +1,19 @@
 # Phase 10 — Polish and deploy (plan, for approval)
 
-Status: **PARTLY BUILT 2026-10-03. Owner: deployment (10.4) is set aside until the application is completely ready. Built: 10.1 (except Docker/render), the OpenAPI snapshot, polish (key delete, confirmations, notifications bell, reduced motion, skip link, privacy page). Held for owner decisions: real-Postgres CI tests, Playwright smoke test. Deliberately kept until launch: the demo sign-up page.**
+Status: **PARTLY BUILT 2026-10-03; re-checked 2026-10-04.
+
+**Done:** 10.1 cleanup (unused deps removed, `requirements-dev.txt` split, `MultiFernet` rotation + `scripts/rotate_keys.py`, `GET /ready`), the OpenAPI snapshot test, polish (key delete, confirmations, notifications bell, reduced motion, skip link, privacy page). **Not built:** `Dockerfile`, `.dockerignore`, `render.yaml`, `scripts/check_deploy.py` (to be written after `docs/DEPLOY.md` is approved), real-Postgres CI tests, Playwright smoke + accessibility scan, `npm audit`/`pip-audit` clean-up (2 low production npm advisories remain; Python pins carry advisories, audit M-10). **Written 2026-10-04:** `docs/DEPLOY.md` and `docs/LAUNCH_CHECKLIST.md` (documents only). CI has never run: the repository has no git remote, and its web job fails on a clean checkout (audit H-02). The original status text follows.
+
+ Owner: deployment (10.4) is set aside until the application is completely ready. Built: 10.1 (except Docker/render), the OpenAPI snapshot, polish (key delete, confirmations, notifications bell, reduced motion, skip link, privacy page). Held for owner decisions: real-Postgres CI tests, Playwright smoke test. Deliberately kept until launch: the demo sign-up page.**
 Constraints: free tiers only (Render free for the API, Vercel Hobby for the web app, Supabase free for the database, auth and file storage). I cannot create accounts or deploy for you: I prepare every file and a step-by-step runbook, you do the clicks, then a check script verifies the result.
 
 ## 1. Where things stand
-All features are built: sign-in, API keys, chat, resumes, ATS score, text and voice interviews with a coding round, reports. Migrations 0001–0027 are live. 573 backend tests and 19 frontend tests pass. What remains is making it safe to put on the internet, easy to run, and pleasant to use.
+All features are built: sign-in, API keys, chat, resumes, ATS score, text and voice interviews with a coding round, reports. Migrations 0001–0029 are live (0001–0027 when this plan was written; 0028–0029 were applied on 2026-10-04). 605 backend tests (+1 skipped) and 158 frontend tests pass (573 and 19 when this plan was written). What remains is making it safe to put on the internet, easy to run, and pleasant to use.
 
 ## 2. Steps
 
 **10.1 Cleanup and hardening (code)**
-- Remove what is no longer used: the Judge0 settings, `apscheduler`, `websockets` and any other unused packages (audited first, not guessed); `pytest*` move to a dev requirements file so the production image stays small.
+- Remove what is no longer used: the Judge0 settings, `apscheduler`, `websockets` and any other unused packages (audited first, not guessed); `pytest*` move to a dev requirements file so the production image stays small. **Done** for the backend; unused web dependencies remain (`zustand`, `zod`, `@react-three/drei`: audit L-15).
 - Key rotation: `KEY_ENCRYPTION_SECRET` accepts several keys (`MultiFernet`), so the encryption key can be rotated without losing anyone's saved API keys.
 - `GET /ready` (checks the database is reachable) next to the existing `/health` (which stays dependency-free for the platform health check).
 - `Dockerfile` for the API (Python 3.13 slim, non-root, **one worker** because the limiter, caches, jobs and sweep are per process, honours `$PORT`), `.dockerignore`, `render.yaml` blueprint (free plan, health check `/health`, every environment variable listed with `sync: false` so no secret is ever in git).
@@ -17,14 +21,14 @@ All features are built: sign-in, API keys, chat, resumes, ATS score, text and vo
 
 **10.2 Quality gates (CI)**
 - An OpenAPI snapshot test: any accidental change to the API shape fails CI until the snapshot is deliberately updated (a script regenerates it). Frontend types stay hand-written; code generation is not worth its upkeep here.
-- Real-Postgres tests (optional, see decision 3): a CI job with a `pgvector` Postgres container applies migrations 0001–0027 on a small Supabase shim (`auth` schema, `auth.uid()`, the `anon`/`authenticated`/`service_role` roles) and checks what mocks cannot: the atomic functions (`append_interview_turns`, `append_chat_exchange`, `replace_resume_chunks`), unique indexes (one submission per problem, one active job, one report per interview), the 7-day default, and that client roles have no access to the backend-only tables.
+- Real-Postgres tests (optional, see decision 3): a CI job with a `pgvector` Postgres container applies migrations 0001–0029 on a small Supabase shim (not built; note the live history applied 0023/0024 before 0020/0021 and has one migration without a file, see the documentary) (`auth` schema, `auth.uid()`, the `anon`/`authenticated`/`service_role` roles) and checks what mocks cannot: the atomic functions (`append_interview_turns`, `append_chat_exchange`, `replace_resume_chunks`), unique indexes (one submission per problem, one active job, one report per interview), the 7-day default, and that client roles have no access to the backend-only tables.
 
 **10.3 Product polish (frontend)**
 - Accessibility pass: visible focus, labels and landmarks, the chat/transcript live regions, colour contrast in both themes, keyboard use of the voice bar and editor panel; `prefers-reduced-motion` respected by Framer Motion and the 3D loading scene.
 - Finish the small open items: key-delete button with confirmation, delete confirmations elsewhere, a notifications bell (the API already writes notices such as "your key stopped working"), mobile layout check of the interview room, empty and error states.
-- **Delete the temporary demo sign-up** page and its route; only Google sign-in remains.
+- **Delete the temporary demo sign-up** page and its route; only Google sign-in remains. **Deliberately kept until launch** (it is in the production build and linked from the sign-in page; audit M-2 / M-08).
 - A minimal **Privacy** page: what is stored (your encrypted keys, resumes, transcripts, 7-day reports), what leaves the app (your prompts go to the AI provider you chose; in Chrome/Edge voice recognition is processed by Google), and how to delete things.
-- A small Playwright smoke test for the public pages (home, sign-in, privacy; protected pages redirect to sign-in) with an automated accessibility scan. Signing in with Google cannot be automated, so logged-in flows stay in the manual checklist.
+- (Not built.) A small Playwright smoke test for the public pages (home, sign-in, privacy; protected pages redirect to sign-in) with an automated accessibility scan. Signing in with Google cannot be automated, so logged-in flows stay in the manual checklist.
 
 **10.4 Deployment (runbook: `docs/DEPLOY.md`)**
 1. *Render* (API): connect the repo, pick the `render.yaml` blueprint, fill in the environment variables (Supabase URL and service key, JWT secret, encryption secret, the `STORAGE_*` set, `ENVIRONMENT=production`, `CORS_ORIGINS=<your Vercel URL>`). Startup validation refuses to boot with anything missing or still pointing at localhost.

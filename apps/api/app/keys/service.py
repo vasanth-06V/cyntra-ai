@@ -21,6 +21,7 @@ async def submit_key(user_id: str, provider: str, slot: str, api_key: str) -> di
     """Validates first and only stores a key that passed, so re-saving can
     never replace a working key with a bad or unconfirmed one (which would
     bounce the user back to onboarding)."""
+    api_key = api_key.strip()  # a pasted key often carries a trailing newline
     adapter = get_adapter(provider)
     try:
         is_valid = await adapter.validate(api_key)

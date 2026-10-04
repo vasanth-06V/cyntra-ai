@@ -5,7 +5,10 @@ from pydantic import AfterValidator
 
 
 def _uuid_string(value: str) -> str:
-    UUID(value)  # ValueError -> FastAPI answers 422 instead of Postgres failing with a 500
+    parsed = UUID(value)  # ValueError -> FastAPI answers 422 instead of Postgres failing with a 500
+    if str(parsed) != value.lower():
+        # `urn:uuid:...`, braces or missing hyphens parse in Python but Postgres rejects them.
+        raise ValueError("not a canonical UUID")
     return value
 
 

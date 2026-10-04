@@ -140,23 +140,6 @@ async def append_turns(interview_id: str, user_id: str, user_text: str, ai_text:
     return int(result.data)
 
 
-async def next_turn_index(interview_id: str) -> int:
-    supabase = get_supabase()
-
-    def _q():
-        return (
-            supabase.table("interview_transcripts")
-            .select("turn_index")
-            .eq("interview_id", interview_id)
-            .order("turn_index", desc=True)
-            .limit(1)
-            .execute()
-        )
-
-    result = await run(_q)
-    return (result.data[0]["turn_index"] + 1) if result.data else 0
-
-
 async def recent_turns(interview_id: str, limit: int) -> list[dict]:
     supabase = get_supabase()
 

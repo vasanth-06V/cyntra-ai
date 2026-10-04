@@ -25,7 +25,9 @@ def seconds_until_pacific_midnight(now: datetime | None = None) -> float:
     except Exception:  # tz database missing (e.g. a bare Windows install)
         pacific = now.astimezone(UTC) - timedelta(hours=8)
     tomorrow = (pacific + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return max(60.0, (tomorrow - pacific).total_seconds())
+    # Subtract in UTC: aware datetimes sharing one tzinfo subtract by wall clock,
+    # which is an hour off across a daylight-saving change.
+    return max(60.0, (tomorrow.astimezone(UTC) - now.astimezone(UTC)).total_seconds())
 
 
 def quota_day(provider: str, now: datetime | None = None) -> date:
