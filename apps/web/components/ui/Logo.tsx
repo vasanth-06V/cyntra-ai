@@ -1,46 +1,33 @@
 import { useId } from "react";
 
 /**
- * Brand mark: a "C" (Cyntra) that opens around a four-point spark (the AI),
- * on a rounded tile that runs indigo to violet to pink-violet.
+ * Brand mark ("Meter C"): three nested arcs that read as a C and as a score
+ * gauge, with one fuchsia dot in the opening for the AI. Indigo-to-violet gradient, no tile,
+ * so it sits on light and dark surfaces alike.
  */
 export function LogoMark({ size = 32, className = "" }: { size?: number; className?: string }) {
   const id = useId();
-  const tile = `${id}-tile`;
-  const shine = `${id}-shine`;
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 32 32"
+      viewBox="0 0 64 64"
       aria-hidden="true"
       focusable="false"
       className={className}
     >
       <defs>
-        <linearGradient id={tile} x1="3" y1="2" x2="29" y2="30" gradientUnits="userSpaceOnUse">
+        <linearGradient id={id} x1="6" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
           <stop stopColor="#4f46e5" />
-          <stop offset="0.55" stopColor="#7c3aed" />
-          <stop offset="1" stopColor="#c026d3" />
-        </linearGradient>
-        <linearGradient id={shine} x1="16" y1="0" x2="16" y2="18" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#fff" stopOpacity="0.28" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          <stop offset="1" stopColor="#a78bfa" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill={`url(#${tile})`} />
-      <rect width="32" height="32" rx="9" fill={`url(#${shine})`} />
-      <path
-        d="M19.640 9.870A8 8 0 1 0 19.640 22.130"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        d="M23 11.500C23.400 14.300 24.700 15.600 27.500 16C24.700 16.400 23.400 17.700 23 20.500C22.600 17.700 21.300 16.400 18.500 16C21.300 15.600 22.600 14.300 23 11.500Z"
-        fill="#fff"
-      />
+      <g fill="none" stroke={`url(#${id})`} strokeWidth="5.4" strokeLinecap="round">
+        <path opacity="0.42" d="M45.43 13.62A24 24 0 1 0 45.43 50.38" />
+        <path opacity="0.72" d="M40.61 19.36A16.5 16.5 0 1 0 40.61 44.64" />
+        <path d="M35.78 25.11A9 9 0 1 0 35.78 38.89" />
+      </g>
+      <circle cx="48" cy="32" r="3.4" fill="#c026d3" />
     </svg>
   );
 }

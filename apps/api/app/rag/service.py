@@ -101,6 +101,14 @@ async def process_resume(user_id: str, resume_id: str) -> int:
         # bare 404 with an empty code -- so look at the HTTP status too.
         http_status = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
         missing = http_status == 404 or "NoSuchKey" in repr(exc)
+        if not missing:
+            # Class, HTTP status and the S3 error code only: enough to tell a wrong
+            # key, region or endpoint apart, and never anything secret.
+            code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+            logger.error(
+                "Resume download from storage failed: %s status=%s code=%s",
+                type(exc).__name__, http_status, code,
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if missing else status.HTTP_502_BAD_GATEWAY,
             detail="The uploaded file could not be found -- please upload it again."
