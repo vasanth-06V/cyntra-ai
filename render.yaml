@@ -5,8 +5,9 @@ services:
     name: cyntra-api
     runtime: docker
     plan: free
-    rootDir: apps/api
-    dockerfilePath: ./Dockerfile
+    # Both paths are relative to the repository root.
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
     # /health has no dependencies, so a database blip never restarts the service.
     healthCheckPath: /health
     autoDeployTrigger: commit
