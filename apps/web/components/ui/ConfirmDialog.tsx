@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Alert } from "./Alert";
 import { Button } from "./Button";
@@ -21,6 +21,8 @@ export type ConfirmDialogProps = {
   busy?: boolean;
   /** A failure from the confirm action, shown inside the dialog so it cannot be missed. */
   error?: string | null;
+  /** The user must type this word (any letter case) before the confirm button works. */
+  requireText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -31,7 +33,12 @@ export type ConfirmDialogProps = {
  * opener decides where focus goes afterwards (see ConfirmProvider). Motion is
  * plain CSS, so the global reduced-motion rule covers it.
  */
-export function ConfirmDialog({
+export function ConfirmDialog(props: ConfirmDialogProps) {
+  // The panel unmounts when closed, so what was typed never carries over to the next time.
+  return props.open ? <DialogPanel {...props} /> : null;
+}
+
+function DialogPanel({
   open,
   title,
   description,
@@ -40,9 +47,12 @@ export function ConfirmDialog({
   tone = "default",
   busy = false,
   error = null,
+  requireText,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const [typed, setTyped] = useState("");
+  const typedId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -58,8 +68,8 @@ export function ConfirmDialog({
   // First focus: the safe choice for destructive actions, the action itself otherwise.
   useEffect(() => {
     if (!open) return;
-    (tone === "danger" ? cancelRef.current : confirmRef.current)?.focus();
-  }, [open, tone]);
+    (tone === "danger" || requireText ? cancelRef.current : confirmRef.current)?.focus();
+  }, [open, tone, requireText]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,8 +107,7 @@ export function ConfirmDialog({
     };
   }, [open]);
 
-  if (!open) return null;
-
+  const matches = !requireText || typed.trim().toLowerCase() === requireText.toLowerCase();
   const danger = tone === "danger";
   const Glyph = danger ? AlertIcon : InfoIcon;
 
@@ -140,6 +149,29 @@ export function ConfirmDialog({
           </div>
         </div>
 
+        {requireText && (
+          <div className="mt-4">
+            <label htmlFor={typedId} className="text-sm font-medium">
+              Type <span className="font-mono font-semibold">{requireText}</span> to confirm
+            </label>
+            <input
+              id={typedId}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && matches && !busy) {
+                  e.preventDefault();
+                  onConfirm();
+                }
+              }}
+              disabled={busy}
+              autoComplete="off"
+              spellCheck={false}
+              className="field mt-1.5 w-full"
+            />
+          </div>
+        )}
+
         {error && (
           <Alert role="alert" className="mt-4">
             {error}
@@ -156,6 +188,7 @@ export function ConfirmDialog({
             variant={danger ? "danger" : "primary"}
             onClick={onConfirm}
             loading={busy}
+            disabled={!matches}
           >
             {error && !busy ? "Try again" : confirmLabel}
           </Button>

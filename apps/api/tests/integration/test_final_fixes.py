@@ -199,7 +199,7 @@ def test_m7_only_the_first_pages_of_a_pdf_are_read(monkeypatch):
         def __init__(self, i):
             self.i = i
 
-        def extract_text(self):
+        def extract_text(self, **_kwargs):
             return f"page {self.i}"
 
     class Doc:

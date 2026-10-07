@@ -10,7 +10,7 @@ _OPTIONS = LLMOptions(
     trim_on_length=True,
     feature="ats_feedback",
     prompt_id="ats.feedback",
-    prompt_version="2",
+    prompt_version="3",
 )
 
 async def generate_feedback(

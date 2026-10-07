@@ -26,7 +26,7 @@ const FEATURES = [
 
 const STEPS = [
   { href: "/settings/api-keys", icon: KeyIcon, label: "Add an AI key", hint: "Gemini is required" },
-  { href: "/resumes", icon: FileIcon, label: "Upload your resume", hint: "PDF or DOCX" },
+  { href: "/settings/resumes", icon: FileIcon, label: "Upload your resume", hint: "PDF or DOCX" },
   { href: "/interviews/setup", icon: MicIcon, label: "Start a mock interview", hint: "About an hour" },
 ];
 
@@ -35,9 +35,9 @@ export async function DashboardHome() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="brand-wash relative overflow-hidden rounded-2xl border border-border bg-card p-6 shadow-md sm:p-9">
+      <section className="brand-wash relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-md sm:p-9">
         <p className="text-xs font-medium uppercase tracking-[0.08em] text-primary">Your workspace</p>
-        <h1 className="mt-3 max-w-2xl text-3xl font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[2.6rem]">
+        <h1 className="mt-3 max-w-2xl text-[1.75rem] font-semibold leading-[1.1] tracking-[-0.035em] sm:text-[2.6rem]">
           Welcome to CyntraAI
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-7 text-muted-foreground">
@@ -45,7 +45,7 @@ export async function DashboardHome() {
           quiet steps to your next offer.
         </p>
 
-        <ol className="stagger mt-7 grid gap-3 sm:grid-cols-3">
+        <ol className="stagger mt-7 grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
           {STEPS.map(({ href, icon: Glyph, label, hint }, i) => (
             <li key={href}>
               <Link
@@ -72,7 +72,7 @@ export async function DashboardHome() {
 
       <section aria-label="What you can do">
         <h2 className="mb-3 text-sm font-semibold tracking-tight text-muted-foreground">Your toolkit</h2>
-        <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="stagger grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-4">
           {FEATURES.map(({ href, icon: Glyph, title, text }) => (
             <Link key={href} href={href} className="group rounded-xl">
               <Card interactive className="h-full p-5">

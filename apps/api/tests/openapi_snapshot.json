@@ -253,6 +253,20 @@
     "title": "CreateConversationRequest",
     "type": "object"
    },
+   "DeleteIn": {
+    "properties": {
+     "confirm": {
+      "const": "DELETE",
+      "title": "Confirm",
+      "type": "string"
+     }
+    },
+    "required": [
+     "confirm"
+    ],
+    "title": "DeleteIn",
+    "type": "object"
+   },
    "HTTPValidationError": {
     "properties": {
      "detail": {
@@ -958,6 +972,33 @@
     "title": "RenameConversationRequest",
     "type": "object"
    },
+   "RenameIn": {
+    "properties": {
+     "full_name": {
+      "maxLength": 200,
+      "title": "Full Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "full_name"
+    ],
+    "title": "RenameIn",
+    "type": "object"
+   },
+   "RenameOut": {
+    "properties": {
+     "full_name": {
+      "title": "Full Name",
+      "type": "string"
+     }
+    },
+    "required": [
+     "full_name"
+    ],
+    "title": "RenameOut",
+    "type": "object"
+   },
    "ReportOut": {
     "properties": {
      "created_at": {
@@ -1504,6 +1545,106 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/account": {
+   "patch": {
+    "operationId": "rename_account_patch",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RenameIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RenameOut"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Rename",
+    "tags": [
+     "account"
+    ]
+   }
+  },
+  "/account/delete": {
+   "post": {
+    "description": "POST (not DELETE) so the typed confirmation travels in a body.",
+    "operationId": "delete_account_delete_post",
+    "parameters": [
+     {
+      "in": "header",
+      "name": "authorization",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Authorization",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeleteIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete",
+    "tags": [
+     "account"
+    ]
+   }
+  },
   "/ats/history": {
    "get": {
     "description": "Past ATS results (newest first); the last 10 per resume are kept.",

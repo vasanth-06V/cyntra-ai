@@ -21,8 +21,10 @@ EMBEDDING_VERSION = "gemini-embedding-001:768:v2"
 _GEMINI = "gemini-flash-lite-latest"
 _CLAUDE_STRONG = "claude-sonnet-5-5"
 _CLAUDE_FAST = _CLAUDE_STRONG
-_GROQ_FAST = "llama-3.1-8b-instant"
-_GROQ_STRONG = "llama-3.3-70b-versatile"
+# The Llama 3.x models are Enterprise-only on Groq now (404 "model_not_found" for a
+# free key, seen 2026-10-04); the gpt-oss models are open to every plan.
+_GROQ_FAST = "openai/gpt-oss-20b"
+_GROQ_STRONG = "openai/gpt-oss-120b"
 
 # Cheap, structured tasks (extract/summarize/validate) can use the fast tier;
 # anything the user reads as a conversation uses the stronger one.

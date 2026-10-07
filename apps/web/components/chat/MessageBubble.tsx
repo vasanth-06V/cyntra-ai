@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import type { ChatMessage } from "@/types/chat";
 import { PROVIDER_INFO } from "@/types/keys";
 import { useToast } from "@/components/ui/Toast";
+import { Markdown } from "./Markdown";
 import { CopyIcon, SparkleIcon, UserIcon } from "@/components/ui/icons";
 
 /**
@@ -51,13 +52,13 @@ export function MessageBubble({
       <div className={`flex min-w-0 max-w-[85%] flex-col sm:max-w-[75%] lg:max-w-[42rem] ${isUser ? "items-end" : "items-start"}`}>
         <span className="mb-1 px-1 text-xs font-medium text-muted-foreground">{name}</span>
         <div
-          className={`whitespace-pre-wrap break-words px-4 py-2.5 text-sm leading-6 shadow-xs ${
+          className={`break-words px-4 py-2.5 text-sm leading-6 shadow-xs ${
             isUser
-              ? "rounded-2xl rounded-br-md bg-primary text-primary-foreground"
+              ? "whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary text-primary-foreground"
               : "rounded-2xl rounded-bl-md border border-border bg-card text-card-foreground"
           }`}
         >
-          {message.content || <TypingDots />}
+          {!message.content ? <TypingDots /> : isUser ? message.content : <Markdown>{message.content}</Markdown>}
         </div>
         {copyable && !isUser && message.content && (
           <button

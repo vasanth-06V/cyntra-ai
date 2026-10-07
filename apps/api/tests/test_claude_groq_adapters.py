@@ -201,7 +201,7 @@ async def test_groq_reply_usage_and_finish_reason(monkeypatch):
     text = await collect(groq_adapter(Net(groq_completion("Done.", "length")), monkeypatch).chat("k", USER, stream=False, usage=usage))
     assert text == "Done."
     assert (usage.requests, usage.input_tokens, usage.output_tokens) == (1, 8, 3)
-    assert usage.finish_reason == "length" and usage.model == "llama-3.3-70b-versatile"
+    assert usage.finish_reason == "length" and usage.model == "openai/gpt-oss-120b"
 
 
 @pytest.mark.asyncio
@@ -211,8 +211,9 @@ async def test_groq_json_mode_and_caps_are_sent(monkeypatch):
     await collect(groq_adapter(net, monkeypatch).chat("k", USER, stream=False, options=options))
     body = json.loads(net.requests[0].content)
     assert body["response_format"] == {"type": "json_object"}
-    assert body["max_tokens"] == 50 and body["temperature"] == 0.0
-    assert body["model"] == "llama-3.1-8b-instant"
+    assert body["max_tokens"] == 50 + 256 and body["temperature"] == 0.0  # headroom for gpt-oss reasoning
+    assert body["reasoning_effort"] == "low"
+    assert body["model"] == "openai/gpt-oss-20b"
 
 
 @pytest.mark.asyncio
@@ -258,3 +259,14 @@ async def test_groq_rate_limit_hint_and_no_sdk_retries(monkeypatch):
 async def test_groq_timeout_maps_to_a_typed_error(monkeypatch):
     with pytest.raises(ProviderTimeoutError):
         await collect(groq_adapter(Net(httpx.ReadTimeout("slow")), monkeypatch).chat("k", USER, stream=False))
+
+
+@pytest.mark.asyncio
+async def test_groq_validate_lists_models_instead_of_calling_a_model(monkeypatch):
+    # A valid key must not be rejected because some model is unavailable to the account.
+    ok = Net(httpx.Response(200, json={"object": "list", "data": [{"id": "openai/gpt-oss-20b", "object": "model", "created": 1, "owned_by": "x"}]}))
+    assert await groq_adapter(ok, monkeypatch).validate("k") is True
+    assert ok.requests[0].method == "GET" and ok.requests[0].url.path.endswith("/models")
+
+    bad = Net(httpx.Response(401, json={"error": {"message": "invalid api key"}}))
+    assert await groq_adapter(bad, monkeypatch).validate("k") is False

@@ -1,3 +1,6 @@
-export const metadata = { title: "Resumes" };
+import { redirect } from "next/navigation";
 
-export { ResumesView as default } from "./ResumesView";
+// Resumes now live under Settings; this keeps old links and bookmarks working.
+export default function ResumesRedirect() {
+  redirect("/settings/resumes");
+}

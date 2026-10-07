@@ -235,3 +235,38 @@ async def test_an_explicit_null_clears_topic_and_difficulty_an_omitted_field_doe
     cleared = (await client.patch(f"/interviews/question-bank/{qid}", json={"topic": None, "difficulty": None}, headers=as_user(OWNER))).json()
     assert cleared["topic"] is None and cleared["difficulty"] is None
     assert env.gemini.embed_calls and "mediation" not in env.gemini.embed_calls[-1].texts[0]  # re-embedded without the topic
+
+
+# ------------------------------------------------------------------ own account
+
+
+async def test_a_user_renames_themselves_and_the_name_is_cleaned(client, team):
+    r = await client.patch("/account", json={"full_name": "  Ada   Lovelace "}, headers=as_user(USER_A))
+    assert r.status_code == 200 and r.json() == {"full_name": "Ada Lovelace"}
+    assert team.db.rows("profiles", id=USER_A)[0]["full_name"] == "Ada Lovelace"
+    assert team.db.rows("profiles", id=USER_B)[0]["full_name"] == "b"  # nobody else changed
+
+
+async def test_an_empty_or_overlong_name_is_refused(client, team):
+    for bad in ("   ", "x" * 81):
+        r = await client.patch("/account", json={"full_name": bad}, headers=as_user(USER_A))
+        assert r.status_code == 422
+    assert team.db.rows("profiles", id=USER_A)[0]["full_name"] == "a"
+
+
+async def test_deleting_an_account_needs_the_typed_word_and_removes_only_that_user(client, team):
+    assert (await client.post("/account/delete", json={}, headers=as_user(USER_A))).status_code == 422
+    assert (await client.post("/account/delete", json={"confirm": "delete"}, headers=as_user(USER_A))).status_code == 422
+    assert team.db.rows("profiles", id=USER_A)  # still there
+
+    r = await client.post("/account/delete", json={"confirm": "DELETE"}, headers=as_user(USER_A))
+    assert r.status_code == 204
+    assert team.db.rows("profiles", id=USER_A) == []
+    assert [u["id"] for u in team.db.tables["auth_users"] if u["id"] == USER_A] == []
+    assert team.db.rows("profiles", id=USER_B)  # others untouched
+
+
+async def test_the_owner_account_cannot_be_deleted(client, team):
+    r = await client.post("/account/delete", json={"confirm": "DELETE"}, headers=as_user(OWNER))
+    assert r.status_code == 409 and r.json()["error"]["code"] == "owner_cannot_delete"
+    assert team.db.rows("profiles", id=OWNER)

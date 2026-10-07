@@ -218,7 +218,7 @@ export function InterviewSetupView() {
           icon={<FileIcon size={20} />}
           title="No processed resume yet"
           action={
-            <LinkButton href="/resumes" variant="outline" size="sm">
+            <LinkButton href="/settings/resumes" variant="outline" size="sm">
               Go to Resumes
             </LinkButton>
           }

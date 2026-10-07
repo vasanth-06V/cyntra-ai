@@ -1,0 +1,35 @@
+# Render Blueprint for the API. Secrets are never stored here: every variable
+# marked `sync: false` is typed into the Render dashboard once.
+services:
+  - type: web
+    name: cyntra-api
+    runtime: docker
+    plan: free
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    # /health has no dependencies, so a database blip never restarts the service.
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS # the exact Vercel origin, e.g. https://your-app.vercel.app
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: KEY_ENCRYPTION_SECRET
+        sync: false
+      - key: STORAGE_ENDPOINT_URL
+        sync: false
+      - key: STORAGE_REGION
+        sync: false
+      - key: STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: STORAGE_SECRET_ACCESS_KEY
+        sync: false
+      - key: STORAGE_BUCKET_NAME
+        value: resumes

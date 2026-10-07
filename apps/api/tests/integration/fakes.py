@@ -286,13 +286,24 @@ class FakeSupabase:
 
     @property
     def auth(self):
-        """Just enough of supabase.auth.admin for the team listing."""
+        """Just enough of supabase.auth.admin for the team listing and account deletion."""
         db = self
 
         class _Admin:
             @staticmethod
             def list_users(page=1, per_page=50):
                 return [SimpleNamespace(id=u["id"], email=u["email"]) for u in db.tables.get("auth_users", [])]
+
+            @staticmethod
+            def delete_user(user_id):
+                # The real database cascades from the auth user to every table that owns data.
+                db.tables["auth_users"] = [u for u in db.tables.get("auth_users", []) if u["id"] != user_id]
+                for name, rows in db.tables.items():
+                    for key in ("user_id", "id", "admin_id"):
+                        if name != "auth_users" and any(key in r for r in rows):
+                            owner_key = "id" if name == "profiles" else key
+                            if key == owner_key:
+                                db.tables[name] = [r for r in db.tables[name] if r.get(key) != user_id]
 
         return SimpleNamespace(admin=_Admin())
 

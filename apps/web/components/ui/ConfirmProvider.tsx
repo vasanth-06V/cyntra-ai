@@ -17,6 +17,8 @@ export type ConfirmOptions = {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "danger" | "default";
+  /** The user must type this word before they can confirm (for irreversible actions). */
+  requireText?: string;
   /**
    * Runs when the user confirms. The dialog stays open with a loading button
    * until it settles; if it throws, the message is shown in the dialog and
@@ -119,6 +121,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
         confirmLabel={pending?.options.confirmLabel}
         cancelLabel={pending?.options.cancelLabel}
         tone={pending?.options.tone}
+        requireText={pending?.options.requireText}
         busy={busy}
         error={error}
         onConfirm={() => void handleConfirm()}

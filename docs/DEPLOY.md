@@ -4,9 +4,9 @@ Status: **DRAFT FOR APPROVAL, written 2026-10-04.** Nothing has been deployed ye
 
 Targets: Supabase free (database, auth, storage), Render free (the API, `apps/api`), Vercel Hobby (the web app, `apps/web`). Total cost $0/month; LLM costs are paid by each user's own keys.
 
-## 0. Files this runbook depends on (to be written after you approve this document)
+## 0. Files this runbook depends on (written 2026-10-07)
 
-None of these exists yet; they are **not** created by this document. The lead will add them, containing exactly this:
+All of these now exist in the repository (`apps/api/scripts/check_deploy.py` is the checker; run it as `python -m scripts.check_deploy <api-url> <web-url>` from `apps/api`). The Dockerfile has **not been built locally** (no Docker on the dev machine): the first Render build is its first test. Contents as designed:
 
 | File | Contents |
 |---|---|

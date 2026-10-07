@@ -21,10 +21,19 @@ from app.providers.base import (
 _FINISH_REASONS = {"stop": "stop", "length": "length", "content_filter": "blocked"}
 
 
-def _request_kwargs(options: LLMOptions) -> dict:
+# gpt-oss models reason before they answer, and the reasoning counts against
+# max_tokens: without headroom a tight cap leaves an empty reply.
+_REASONING_PREFIX = "openai/gpt-oss"
+_REASONING_ALLOWANCE = 256
+
+
+def _request_kwargs(options: LLMOptions, model: str = "") -> dict:
     kwargs: dict = {}
+    reasoning = model.startswith(_REASONING_PREFIX)
     if options.max_output_tokens is not None:
-        kwargs["max_tokens"] = options.max_output_tokens
+        kwargs["max_tokens"] = options.max_output_tokens + (_REASONING_ALLOWANCE if reasoning else 0)
+    if reasoning:
+        kwargs["extra_body"] = {"reasoning_effort": "low"}  # not a typed argument in every SDK version
     if options.temperature is not None:
         kwargs["temperature"] = options.temperature
     if options.json_mode:
@@ -75,11 +84,10 @@ class GroqAdapter(ProviderAdapter):
     async def validate(self, api_key: str) -> bool:
         client = self._client(api_key, timeout_for("validate"))
         try:
-            await client.chat.completions.create(
-                model=model_for(self.name, "validate"),
-                max_tokens=5,
-                messages=[{"role": "user", "content": "hi"}],
-            )
+            # Listing models checks the key without depending on any one model
+            # being available to the account (Groq has retired or restricted
+            # models before) and spends no generation quota.
+            await client.models.list()
             return True
         except groq.AuthenticationError:
             return False
@@ -98,8 +106,8 @@ class GroqAdapter(ProviderAdapter):
         timeout = options.timeout_s or timeout_for(options.task)
         client = self._client(api_key, timeout)
         converted = [{"role": m.role.value, "content": m.content} for m in messages]
-        kwargs = _request_kwargs(options)
         model = options.model_override or model_for(self.name, options.task)
+        kwargs = _request_kwargs(options, model)
         if usage is not None:
             usage.model = model
         started = time.perf_counter()
