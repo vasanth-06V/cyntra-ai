@@ -8,7 +8,7 @@ Start with `PRODUCT.md` for what the product is, and the STATE SNAPSHOT at the t
 |---|---|---|
 | [PRODUCT.md](PRODUCT.md) | The single A-Z reference: features, architecture, API inventory, data model, decisions, what is verified live, known limitations, what remains, env vars | **current** (2026-10-04) |
 | [PROJECT_DOCUMENTARY.md](PROJECT_DOCUMENTARY.md) | Chronological build journal (Action / Why / Result / Problems), with a current STATE SNAPSHOT (2026-10-04) at the top | **current** snapshot at the top; the log below it is **historical**; the older 2026-10-02 snapshot inside the log is **superseded** |
-| [DEPLOY.md](DEPLOY.md) | Owner runbook: Supabase, Vercel, Render, env vars, verification, pause handling, rollback; lists the deployment files still to be written | **current**, draft for approval (nothing deployed yet) |
+| [DEPLOY.md](DEPLOY.md) | Owner runbook: Supabase, Vercel, Render, env vars, verification, pause handling, rollback; lists the deployment files (all written; the Dockerfile has not been built yet) | **current**, draft for approval (nothing deployed yet) |
 | [LAUNCH_CHECKLIST.md](LAUNCH_CHECKLIST.md) | Owner checklist for launch: secret rotation, demo sign-up removal, hardening, owner-run scripts, headers, monitoring, full manual walk-through | **current**, draft for approval |
 | [FACTS.md](FACTS.md) | External facts the product depends on (hosting, Supabase, Gemini, Claude, Groq, browser voice, Monaco), each marked verified / measured / unverified / obsolete | **current** (2026-10-04) |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | The original end-to-end plan from 2026-09-27 (stack, schema, ten build phases) | **historical**, superseded by PRODUCT.md (banner at the top lists the changes) |
@@ -23,4 +23,4 @@ Start with `PRODUCT.md` for what the product is, and the STATE SNAPSHOT at the t
 | [audit/FRONTEND_AUDIT.md](audit/FRONTEND_AUDIT.md) | Final frontend audit (route map, API contract matrix, findings, test gaps) | **point-in-time** (2026-10-04) |
 | [audit/DB_DOCS_CROSSCUTTING_AUDIT.md](audit/DB_DOCS_CROSSCUTTING_AUDIT.md) | Final database, docs, CI, secrets, dependencies and operations audit | **point-in-time** (2026-10-04); its docs-correction list has been applied by this documentation pass |
 
-Other places to look: `apps/api/.env.example` (backend variables), `apps/api/tests/openapi_snapshot.json` (the authoritative API shape, pinned by a test), `apps/web/README.md` (still create-next-app boilerplate; there is no root README and no `apps/web/.env.example` yet).
+Other places to look: `apps/api/.env.example` (backend variables), `apps/api/tests/openapi_snapshot.json` (the authoritative API shape, pinned by a test), the root `README.md` (overview and how to run), `apps/web/README.md` (web app notes) and `apps/web/.env.example`.

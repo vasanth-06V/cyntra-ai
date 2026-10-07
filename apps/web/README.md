@@ -28,8 +28,8 @@ See `.env.example`. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 
 ## Structure
 
 - `app/(auth)` sign-in, account setup, onboarding, temporary demo sign-up.
-- `app/(dashboard)` the signed-in app: chat, interviews (setup and room), ATS score, resumes, reports, settings (API keys, team), question bank.
-- `app/api/resumes` route handlers for resume upload, rename and delete (Supabase + storage).
+- `app/(dashboard)` the signed-in app: chat, interviews (setup and room), ATS score, resumes, reports, settings (account, resumes, API keys, security, team, delete account), question bank.
+- `app/api/resumes` route handlers for resume upload, rename and delete (Supabase + storage); `app/api/account` deletes the signed-in account.
 - `components/ui` design-system primitives (`Button`, `Card`, `ListRow`, `ConfirmDialog`, `Toast`, ...), `components/<area>` feature components.
 - `lib/api-client` bearer-token fetch client for the FastAPI backend (retries reads while the server wakes up).
 - `lib/voice` browser speech recognition and synthesis for the interview room.
